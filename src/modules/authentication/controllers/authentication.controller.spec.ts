@@ -13,9 +13,44 @@ import { Test } from '@nestjs/testing';
 // Modules
 import { JwtConfigModule } from '../../../configurations/jwt/jwt-configuration.module';
 
+// Redis
+import { REDIS_CLIENT } from '../../../database/redis/redis-provider.module';
+
 // Services
 import { AuthenticationService } from '../services/authentication.service';
+import { JwtConfigService } from '../../../configurations/jwt/jwt-configuration.service';
+import { MagicLinkService } from '../services/magic-link.service';
+import { OtpService } from '../services/otp.service';
 import { UsersService } from '../../users/services/users.service';
+
+const mockRedis = {
+  del: jest.fn(),
+  get: jest.fn(),
+  setex: jest.fn().mockResolvedValue('OK'),
+};
+
+const mockUser = {
+  avatar: null,
+  createdAt: 123213000,
+  createdBy: 'admin',
+  createdById: '1',
+  deletedAt: null,
+  deletedBy: 'admin',
+  deletedById: '1',
+  email: 'email@test.com',
+  googleId: null,
+  id: '1',
+  isEmailVerified: false,
+  isPhoneVerified: false,
+  name: null,
+  password: 'hashed-password',
+  phoneNumber: null,
+  providers: [],
+  updatedAt: 123213000,
+  updatedBy: 'admin',
+  updatedById: '1',
+  username: 'username',
+};
 
 describe('AuthenticationController', () => {
   let controller: AuthenticationController;
@@ -34,37 +69,34 @@ describe('AuthenticationController', () => {
       ],
       providers: [
         AuthenticationService,
+        JwtConfigService,
+        { provide: REDIS_CLIENT, useValue: mockRedis },
+        {
+          provide: MagicLinkService,
+          useValue: {
+            generateAndSend: jest.fn().mockResolvedValue(undefined),
+            verify: jest.fn().mockResolvedValue('user@example.com'),
+          },
+        },
+        {
+          provide: OtpService,
+          useValue: {
+            generateAndSend: jest.fn().mockResolvedValue(undefined),
+            verify: jest.fn().mockResolvedValue(true),
+          },
+        },
         {
           provide: UsersService,
           useValue: {
             create: jest
               .fn()
               .mockImplementation((user: UsersService) => Promise.resolve({ id: '1', ...user })),
-            findAll: jest.fn().mockResolvedValue([
-              {
-                email: 'email #1',
-                name: 'name #1',
-              },
-              {
-                email: 'email #2',
-                name: 'name #2',
-              },
-            ]),
-            findOne: jest.fn().mockImplementation((id: string) =>
-              Promise.resolve({
-                email: 'email #1',
-                name: 'name #1',
-                id,
-              }),
-            ),
-            findOneByEmail: jest.fn().mockImplementation((id: string) =>
-              Promise.resolve({
-                email: 'email #1',
-                name: 'name #1',
-                id,
-              }),
-            ),
-            remove: jest.fn(),
+            createPhoneUser: jest.fn().mockResolvedValue(mockUser),
+            findOneByEmail: jest.fn().mockResolvedValue(mockUser),
+            findOneById: jest.fn().mockResolvedValue(mockUser),
+            findOneByPhoneNumber: jest.fn().mockResolvedValue(null),
+            findOneByUsername: jest.fn().mockResolvedValue(mockUser),
+            findOrCreateSsoUser: jest.fn().mockResolvedValue(mockUser),
           },
         },
       ],
@@ -72,6 +104,8 @@ describe('AuthenticationController', () => {
     }).compile();
 
     controller = module.get<AuthenticationController>(AuthenticationController);
+    jest.clearAllMocks();
+    mockRedis.setex.mockResolvedValue('OK');
   });
 
   it('should be defined', () => {

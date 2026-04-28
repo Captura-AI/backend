@@ -2,7 +2,7 @@
 import { IsNotEmpty } from 'class-validator';
 
 // Interfaces
-import { ILogin } from '../interfaces/authentication.interface';
+import type { IAuthTokens } from '../interfaces/authentication.interface';
 
 // NestJS Libraries
 import { ApiProperty } from '@nestjs/swagger';
@@ -17,7 +17,10 @@ export class LoginUsernameDto {
   public password!: string;
 }
 
-export class LoginWithAccessToken implements ILogin {
+export class LoginWithAccessToken implements IAuthTokens {
   @ApiProperty()
   public accessToken!: string;
+
+  @ApiProperty()
+  public refreshToken!: string;
 }

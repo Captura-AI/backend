@@ -5,8 +5,9 @@ export {};
  */
 declare global {
   interface IRequestUser {
-    id: string;
     email: string;
+    id: string;
+    phoneNumber?: string;
     username: string;
   }
 
@@ -17,9 +18,9 @@ declare global {
   }
 
   interface IConstructBaseResponse<T> {
-    statusCode: number;
-    message: string;
     data: T;
+    message: string;
+    statusCode: number;
   }
 
   interface IConstructPageMeta {
@@ -34,8 +35,8 @@ declare global {
   }
 
   interface IValidateJWTStrategy {
+    email: string;
     sub: string;
     username: string;
-    email: string;
   }
 }

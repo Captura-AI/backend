@@ -16,8 +16,9 @@ const options: DataSourceOptions & SeederOptions = {
   database: process.env.DATABASE_NAME,
   username: process.env.DATABASE_USER,
   password: process.env.DATABASE_PASSWORD,
-  seeds: ['src/database/postgres/seeders/*{.ts,.js}'],
   factories: [],
+  migrations: ['src/database/postgres/migrations/*{.ts,.js}'],
+  seeds: ['src/database/postgres/seeders/*{.ts,.js}'],
 };
 
 export default new DataSource(options);
