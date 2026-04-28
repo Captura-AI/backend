@@ -21,25 +21,31 @@ export class HealthController {
 
   @Get()
   @HealthCheck()
-  public check() {
-    return this.ready();
-  }
-
-  @Get('ready')
-  @HealthCheck()
-  public ready() {
-    return this._health.check([
+  public async check() {
+    const result = await this._health.check([
       () => this._db.pingCheck('database'),
       () => this._memory.checkHeap('memory_heap', 300 * 1024 * 1024),
       () => this._memory.checkRSS('memory_rss', 512 * 1024 * 1024),
     ]);
+    return { message: 'Health check passed', result };
+  }
+
+  @Get('ready')
+  @HealthCheck()
+  public async ready() {
+    const result = await this._health.check([
+      () => this._db.pingCheck('database'),
+      () => this._memory.checkHeap('memory_heap', 300 * 1024 * 1024),
+      () => this._memory.checkRSS('memory_rss', 512 * 1024 * 1024),
+    ]);
+    return { message: 'Service is ready', result };
   }
 
   @Get('live')
   public live() {
     return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
+      message: 'Service is live',
+      result: { status: 'ok', timestamp: new Date().toISOString() },
     };
   }
 }

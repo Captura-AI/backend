@@ -14,7 +14,7 @@ import { ContextInterceptor } from './common/interceptors/context.interceptor';
 import { AppModule } from './app.module';
 
 // NestJS Libraries
-import { ClassSerializerInterceptor, Logger, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
@@ -42,10 +42,6 @@ async function bootstrap() {
    * Global Prefix
    */
   app.setGlobalPrefix('api');
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: '1',
-  });
   app.enableShutdownHooks();
 
   if (appConfigurations.trustProxy) {

@@ -1,10 +1,13 @@
 // Configurations
 import appConfiguration from './app-configuration';
-import postgresConfiguration from '../database/postgres/postgres-configuration';
+import appleConfiguration from '../apple/apple-configuration';
+import fonnteConfiguration from '../fonnte/fonnte-configuration';
+import googleConfiguration from '../google/google-configuration';
 import jwtConfiguration from '../jwt/jwt-configuration';
-import redisConfiguration from '../redis/redis-configuration';
-import queueConfiguration from '../queue/queue-configuration';
 import mailConfiguration from '../mail/mail-configuration';
+import postgresConfiguration from '../database/postgres/postgres-configuration';
+import queueConfiguration from '../queue/queue-configuration';
+import redisConfiguration from '../redis/redis-configuration';
 import { validateEnvironment } from './app-env.validation';
 
 // NestJS Libraries
@@ -26,11 +29,14 @@ import { AppConfigurationsService } from './app-configuration.service';
       cache: true,
       load: [
         appConfiguration,
-        postgresConfiguration,
+        appleConfiguration,
+        fonnteConfiguration,
+        googleConfiguration,
         jwtConfiguration,
-        redisConfiguration,
-        queueConfiguration,
         mailConfiguration,
+        postgresConfiguration,
+        queueConfiguration,
+        redisConfiguration,
       ],
       validate: validateEnvironment,
     }),

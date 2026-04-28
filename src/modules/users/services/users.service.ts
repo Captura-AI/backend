@@ -14,6 +14,9 @@ import { UsersEntity } from '../entities/users.entity';
 // Helpers
 import { QuerySortingHelper } from '../../../common/helpers/query-sorting.helper';
 
+// Interfaces
+import type { ICreatePhoneUser, IFindOrCreateSsoUser } from '../interfaces/users.interface';
+
 // NestJS Libraries
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -31,9 +34,6 @@ export class UsersService {
 
   /**
    * @description Handle added relationship
-   * @param {SelectQueryBuilder<UsersEntity>} query
-   *
-   * @returns {void}
    */
   private _addRelations(_query: SelectQueryBuilder<UsersEntity>): void {
     // ? Add relations here
@@ -61,8 +61,8 @@ export class UsersService {
    */
   private _sortData(filters: ListOptionDto, query: SelectQueryBuilder<UsersEntity>): void {
     const permitSort = {
-      username: 'users.username',
       email: 'users.email',
+      username: 'users.username',
     };
 
     QuerySortingHelper(query, filters.sortBy, permitSort);
@@ -121,10 +121,95 @@ export class UsersService {
     try {
       const model = new UsersEntity();
 
-      // ? After we initialize the instance of the model, we need to merge the data from the DTO
       this._usersRepository.merge(model, payload);
 
-      // ? Then, we save the model to the database
+      return await this._usersRepository.save(model);
+    } catch (error: unknown) {
+      const err = error as { response?: { error?: string }; message?: string };
+      throw new BadRequestException(BAD_REQUEST_MSG, {
+        cause: new Error(),
+        description: err.response?.error ?? err.message,
+      });
+    }
+  }
+
+  /**
+   * @description Create a user from phone number OTP verification
+   */
+  public async createPhoneUser(payload: ICreatePhoneUser): Promise<UsersEntity> {
+    try {
+      const model = new UsersEntity();
+
+      this._usersRepository.merge(model, {
+        isPhoneVerified: payload.isPhoneVerified,
+        phoneNumber: payload.phoneNumber,
+        providers: payload.providers,
+      });
+
+      return await this._usersRepository.save(model);
+    } catch (error: unknown) {
+      const err = error as { response?: { error?: string }; message?: string };
+      throw new BadRequestException(BAD_REQUEST_MSG, {
+        cause: new Error(),
+        description: err.response?.error ?? err.message,
+      });
+    }
+  }
+
+  /**
+   * @description Find or create a user from an SSO provider (Google / Apple)
+   */
+  public async findOrCreateSsoUser(payload: IFindOrCreateSsoUser): Promise<UsersEntity> {
+    try {
+      let user: UsersEntity | null = null;
+
+      if (payload.googleId) {
+        user = await this._usersRepository.findOne({
+          where: { googleId: payload.googleId },
+        });
+      } else if (payload.appleId) {
+        user = await this._usersRepository.findOne({
+          where: { appleId: payload.appleId },
+        });
+      }
+
+      if (!user && payload.email) {
+        user = await this._usersRepository.findOne({
+          where: { email: payload.email },
+        });
+      }
+
+      if (user) {
+        const currentProviders = user.providers ?? [];
+
+        if (!currentProviders.includes(payload.provider)) {
+          currentProviders.push(payload.provider);
+        }
+
+        this._usersRepository.merge(user, {
+          appleId: payload.appleId ?? user.appleId,
+          avatar: payload.avatar ?? user.avatar,
+          googleId: payload.googleId ?? user.googleId,
+          isEmailVerified: payload.isEmailVerified ?? user.isEmailVerified,
+          name: payload.name ?? user.name,
+          providers: currentProviders,
+        });
+
+        return await this._usersRepository.save(user);
+      }
+
+      const model = new UsersEntity();
+
+      this._usersRepository.merge(model, {
+        appleId: payload.appleId ?? null,
+        avatar: payload.avatar ?? null,
+        email: payload.email ?? null,
+        googleId: payload.googleId ?? null,
+        isEmailVerified: payload.isEmailVerified ?? false,
+        name: payload.name ?? null,
+        providers: [payload.provider],
+      });
+
       return await this._usersRepository.save(model);
     } catch (error: unknown) {
       const err = error as { response?: { error?: string }; message?: string };
@@ -143,7 +228,6 @@ export class UsersService {
       const selectedUser = await this.findOneById(id);
       const deletedAt = Math.floor(Date.now() / 1000);
 
-      // Merge Two Entity into single one and save it
       this._usersRepository.merge(selectedUser, {
         deletedAt,
       });
@@ -204,6 +288,30 @@ export class UsersService {
   }
 
   /**
+   * @description Handle business logic for finding a user by email
+   */
+  public async findOneByEmail(email: string): Promise<UsersEntity | null> {
+    const user = await this._usersRepository.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return user;
+  }
+
+  /**
+   * @description Handle business logic for finding a user by phone number
+   */
+  public async findOneByPhoneNumber(phoneNumber: string): Promise<UsersEntity | null> {
+    return await this._usersRepository.findOne({
+      where: { phoneNumber },
+    });
+  }
+
+  /**
    * @description Handle business logic for finding a user by username
    */
   public async findOneByUsername(username: string): Promise<UsersEntity | null> {
@@ -221,28 +329,12 @@ export class UsersService {
   }
 
   /**
-   * @description Handle business logic for finding a user by email
-   */
-  public async findOneByEmail(email: string): Promise<UsersEntity | null> {
-    const user = await this._usersRepository.findOne({
-      where: { email },
-    });
-
-    if (!user) {
-      return null;
-    }
-
-    return user;
-  }
-
-  /**
    * @description Handle business logic for restoring a user
    */
   public async restore(id: string, user: IRequestUser): Promise<UsersEntity> {
     try {
       const selectedUser = await this.findOneById(id);
 
-      // Merge Two Entity into single one and save it
       this._usersRepository.merge(selectedUser, {
         deletedAt: null,
       });
@@ -278,7 +370,6 @@ export class UsersService {
           },
         });
 
-        // Merge Two Entity into single one and save it
         this._usersRepository.merge(selectedUser, payload);
 
         await manager.save(selectedUser, {

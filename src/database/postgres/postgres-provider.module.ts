@@ -25,7 +25,7 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
         password: pgConfigService.databasePassword,
         database: pgConfigService.databaseName,
         entities: [],
-        migrations: [],
+        migrations: ['dist/database/postgres/migrations/*.js'],
         subscribers: [],
         synchronize: pgConfigService.databaseSync,
         logging: pgConfigService.databaseLogging,
