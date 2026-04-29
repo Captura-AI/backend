@@ -1,5 +1,7 @@
 // Entities
 import { AppBaseEntity } from '../../../common/entities/base.entity';
+import { MomentCollaboratorEntity } from './moment-collaborator.entity';
+import { UsersEntity } from '../../users/entities/users.entity';
 
 // Enums
 import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
@@ -8,7 +10,7 @@ import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
 import { ApiProperty } from '@nestjs/swagger';
 
 // TypeORM
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 
 @Entity('moments')
 export class MomentEntity extends AppBaseEntity {
@@ -59,6 +61,13 @@ export class MomentEntity extends AppBaseEntity {
   @ApiProperty({ nullable: true, description: 'FK to users.id' })
   @Column({ name: 'photographer_id', type: 'uuid', nullable: true })
   public photographerId!: string | null;
+
+  @ManyToOne(() => UsersEntity, { onDelete: 'SET NULL', nullable: true, eager: false })
+  @JoinColumn({ name: 'photographer_id' })
+  public photographer?: UsersEntity | null;
+
+  @OneToMany(() => MomentCollaboratorEntity, (c) => c.moment, { eager: false })
+  public collaborators?: MomentCollaboratorEntity[];
 
   // ─── Vehicle ─────────────────────────────────────────────────────────────────
 

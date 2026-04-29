@@ -4,10 +4,13 @@ export {};
  * @description Here's a way to extend the global interfaces.
  */
 declare global {
+  type TUserRole = 'admin' | 'photographer' | 'user';
+
   interface IRequestUser {
     email: string;
     id: string;
     phoneNumber?: string;
+    role?: TUserRole;
     username: string;
   }
 
@@ -36,6 +39,7 @@ declare global {
 
   interface IValidateJWTStrategy {
     email: string;
+    role?: TUserRole;
     sub: string;
     username: string;
   }

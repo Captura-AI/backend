@@ -26,6 +26,7 @@ const buildMockQueryBuilder = (data: MomentEntity[], total: number) => {
     getMany: jest.fn().mockResolvedValue(data),
     getRawMany: jest.fn().mockResolvedValue([]),
     groupBy: jest.fn().mockReturnThis(),
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     select: jest.fn().mockReturnThis(),

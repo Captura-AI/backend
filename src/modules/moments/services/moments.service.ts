@@ -33,8 +33,8 @@ export class MomentsService {
     private readonly _momentsRepository: Repository<MomentEntity>,
   ) {}
 
-  private _addRelations(_query: SelectQueryBuilder<MomentEntity>): void {
-    // ? Add relations here (e.g., photographer join) when UsersModule is available
+  private _addRelations(query: SelectQueryBuilder<MomentEntity>): void {
+    query.leftJoinAndSelect('moments.photographer', 'photographer');
   }
 
   private _searchData(filters: SearchMomentDto, query: SelectQueryBuilder<MomentEntity>): void {

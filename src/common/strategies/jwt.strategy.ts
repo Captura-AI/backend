@@ -19,6 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   public validate(payload: IValidateJWTStrategy): IRequestUser {
-    return { id: payload.sub, username: payload.username, email: payload.email };
+    return {
+      email: payload.email,
+      id: payload.sub,
+      role: payload.role,
+      username: payload.username,
+    };
   }
 }
