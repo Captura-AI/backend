@@ -1,6 +1,8 @@
 // Entities
 import { AppBaseEntity } from '../../../common/entities/base.entity';
 import { MomentCollaboratorEntity } from './moment-collaborator.entity';
+import { MomentLicenseEntity } from './moment-license.entity';
+import { PhotographerProfileEntity } from '../../photographers/entities/photographer-profile.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
 
 // Enums
@@ -38,6 +40,18 @@ export class MomentEntity extends AppBaseEntity {
   @Column({ name: 'description', type: 'text', nullable: true })
   public description!: string | null;
 
+  @ApiProperty({ nullable: true, description: 'Extended narrative about this moment' })
+  @Column({ name: 'story', type: 'text', nullable: true })
+  public story!: string | null;
+
+  @ApiProperty({ nullable: true, description: 'URL-friendly identifier' })
+  @Column({ name: 'slug', type: 'varchar', length: 255, nullable: true, unique: true })
+  public slug!: string | null;
+
+  @ApiProperty({ nullable: true, isArray: true, type: String, description: 'Keywords / tags' })
+  @Column({ name: 'tags', type: 'simple-array', nullable: true })
+  public tags!: string[] | null;
+
   // ─── Location ────────────────────────────────────────────────────────────────
 
   @ApiProperty({ nullable: true })
@@ -66,8 +80,23 @@ export class MomentEntity extends AppBaseEntity {
   @JoinColumn({ name: 'photographer_id' })
   public photographer?: UsersEntity | null;
 
+  @ApiProperty({ nullable: true, description: 'FK to photographer_profiles.id' })
+  @Column({ name: 'photographer_profile_id', type: 'uuid', nullable: true })
+  public photographerProfileId!: string | null;
+
+  @ManyToOne(() => PhotographerProfileEntity, {
+    onDelete: 'SET NULL',
+    nullable: true,
+    eager: false,
+  })
+  @JoinColumn({ name: 'photographer_profile_id' })
+  public photographerProfile?: PhotographerProfileEntity | null;
+
   @OneToMany(() => MomentCollaboratorEntity, (c) => c.moment, { eager: false })
   public collaborators?: MomentCollaboratorEntity[];
+
+  @OneToMany(() => MomentLicenseEntity, (license) => license.moment, { eager: false })
+  public licenses?: MomentLicenseEntity[];
 
   // ─── Vehicle ─────────────────────────────────────────────────────────────────
 

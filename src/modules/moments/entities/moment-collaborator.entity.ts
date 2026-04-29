@@ -7,7 +7,7 @@ import { UsersEntity } from '../../users/entities/users.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 // TypeORM
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, type Relation } from 'typeorm';
 
 @Entity('moment_collaborators')
 export class MomentCollaboratorEntity extends AppBaseEntity {
@@ -24,7 +24,7 @@ export class MomentCollaboratorEntity extends AppBaseEntity {
     eager: false,
   })
   @JoinColumn({ name: 'moment_id' })
-  public moment?: MomentEntity;
+  public moment?: Relation<MomentEntity>;
 
   @ManyToOne(() => UsersEntity, { onDelete: 'CASCADE', eager: false })
   @JoinColumn({ name: 'user_id' })

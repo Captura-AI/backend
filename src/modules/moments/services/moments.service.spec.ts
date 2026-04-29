@@ -4,6 +4,7 @@ import { TimeOfDayEnum } from '../dtos/time-filter.dto';
 
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
+import { MomentLicenseEntity } from '../entities/moment-license.entity';
 
 // Enums
 import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
@@ -24,6 +25,7 @@ const buildMockQueryBuilder = (data: MomentEntity[], total: number) => {
     cache: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn().mockResolvedValue([data, total]),
     getMany: jest.fn().mockResolvedValue(data),
+    getOne: jest.fn().mockResolvedValue(data[0] ?? null),
     getRawMany: jest.fn().mockResolvedValue([]),
     groupBy: jest.fn().mockReturnThis(),
     leftJoinAndSelect: jest.fn().mockReturnThis(),
@@ -45,20 +47,33 @@ const mockMoment = (): MomentEntity => {
   entity.vehicleType = VehicleTypeEnum.CAR;
   entity.capturedAt = 1700000000;
   entity.deletedAt = null;
+  entity.photographerProfileId = null;
+  entity.photographerProfile = null;
   return entity;
 };
 
 describe('MomentsService', () => {
   let service: MomentsService;
-  let mockRepository: {
+  let mockMomentsRepository: {
+    count: jest.Mock;
     createQueryBuilder: jest.Mock;
+    exists: jest.Mock;
     findOne: jest.Mock;
+  };
+  let mockLicensesRepository: {
+    find: jest.Mock;
   };
 
   beforeEach(async () => {
-    mockRepository = {
+    mockMomentsRepository = {
+      count: jest.fn(),
       createQueryBuilder: jest.fn(),
+      exists: jest.fn(),
       findOne: jest.fn(),
+    };
+
+    mockLicensesRepository = {
+      find: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -66,7 +81,11 @@ describe('MomentsService', () => {
         MomentsService,
         {
           provide: getRepositoryToken(MomentEntity),
-          useValue: mockRepository,
+          useValue: mockMomentsRepository,
+        },
+        {
+          provide: getRepositoryToken(MomentLicenseEntity),
+          useValue: mockLicensesRepository,
         },
       ],
     }).compile();
@@ -78,7 +97,7 @@ describe('MomentsService', () => {
     it('returns paginated results with no filters', async () => {
       const moment = mockMoment();
       const qb = buildMockQueryBuilder([moment], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       const result = await service.search(filters);
@@ -90,7 +109,7 @@ describe('MomentsService', () => {
 
     it('applies city filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.location = { city: 'Jakarta' };
@@ -104,7 +123,7 @@ describe('MomentsService', () => {
 
     it('applies district filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.location = { district: 'Kebayoran' };
@@ -118,7 +137,7 @@ describe('MomentsService', () => {
 
     it('applies vehicleTypes filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.vehicleTypes = [VehicleTypeEnum.CAR, VehicleTypeEnum.MOTORCYCLE];
@@ -132,7 +151,7 @@ describe('MomentsService', () => {
 
     it('applies licensePlate partial match filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.licensePlate = 'B 1234';
@@ -146,7 +165,7 @@ describe('MomentsService', () => {
 
     it('applies timeRange from/to filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.timeRange = { from: 1700000000, to: 1700100000 };
@@ -163,7 +182,7 @@ describe('MomentsService', () => {
 
     it('applies timeOfDay morning filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.timeRange = { timeOfDay: TimeOfDayEnum.MORNING };
@@ -180,7 +199,7 @@ describe('MomentsService', () => {
 
     it('applies text query filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.query = 'sunset';
@@ -197,7 +216,7 @@ describe('MomentsService', () => {
 
     it('returns empty paginated result when no moments match', async () => {
       const qb = buildMockQueryBuilder([], 0);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const filters = new SearchMomentDto();
       filters.location = { city: 'NonExistentCity' };
@@ -211,29 +230,139 @@ describe('MomentsService', () => {
     it('throws BadRequestException on repository error', async () => {
       const qb = buildMockQueryBuilder([], 0);
       (qb.getManyAndCount as jest.Mock).mockRejectedValue(new Error('DB connection lost'));
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       await expect(service.search(new SearchMomentDto())).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('findOneById()', () => {
-    it('returns the moment when found', async () => {
+    it('returns moment with null photographerSummary when no profile linked', async () => {
       const moment = mockMoment();
-      mockRepository.findOne.mockResolvedValue(moment);
+      const qb = buildMockQueryBuilder([moment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const result = await service.findOneById('test-uuid-1234');
 
-      expect(result).toEqual(moment);
-      expect(mockRepository.findOne).toHaveBeenCalledWith({
-        where: { id: 'test-uuid-1234', deletedAt: undefined },
-      });
+      expect(result.id).toBe('test-uuid-1234');
+      expect(result.photographerSummary).toBeNull();
     });
 
     it('throws NotFoundException when moment does not exist', async () => {
-      mockRepository.findOne.mockResolvedValue(null);
+      const qb = buildMockQueryBuilder([], 0);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       await expect(service.findOneById('non-existent-id')).rejects.toThrow(NotFoundException);
+    });
+
+    it('includes photographer summary when profile is linked', async () => {
+      const moment = mockMoment();
+      moment.photographerProfileId = 'profile-uuid';
+      moment.photographerProfile = {
+        id: 'profile-uuid',
+        artistName: 'Ansel Adams',
+        bio: 'Landscape photographer',
+        location: 'Yosemite',
+        user: { avatar: 'https://example.com/avatar.jpg' },
+      } as any;
+
+      const qb = buildMockQueryBuilder([moment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.count.mockResolvedValue(42);
+
+      const result = await service.findOneById('test-uuid-1234');
+
+      expect(result.photographerSummary).not.toBeNull();
+      expect(result.photographerSummary?.artistName).toBe('Ansel Adams');
+      expect(result.photographerSummary?.totalMoments).toBe(42);
+      expect(result.photographerSummary?.avatar).toBe('https://example.com/avatar.jpg');
+    });
+  });
+
+  describe('findSimilar()', () => {
+    it('throws NotFoundException when source moment does not exist', async () => {
+      mockMomentsRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findSimilar('non-existent-id')).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns similar moments based on city and vehicleType', async () => {
+      const source = mockMoment();
+      mockMomentsRepository.findOne.mockResolvedValue(source);
+
+      const similarMoment = mockMoment();
+      similarMoment.id = 'similar-uuid';
+      const qb = buildMockQueryBuilder([similarMoment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findSimilar('test-uuid-1234', 5);
+
+      expect(mockMomentsRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'test-uuid-1234', deletedAt: undefined },
+        select: ['id', 'city', 'vehicleType'],
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('moments.id != :momentId', {
+        momentId: 'test-uuid-1234',
+      });
+      expect(qb.take).toHaveBeenCalledWith(5);
+      expect(result).toHaveLength(1);
+    });
+
+    it('applies city condition when source has city', async () => {
+      const source = mockMoment();
+      source.city = 'Bandung';
+      mockMomentsRepository.findOne.mockResolvedValue(source);
+
+      const qb = buildMockQueryBuilder([], 0);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findSimilar('test-uuid-1234');
+
+      const callArgs = (qb.andWhere as jest.Mock).mock.calls;
+      const conditionCall = callArgs.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('moments.city = :city'),
+      );
+      expect(conditionCall).toBeDefined();
+    });
+  });
+
+  describe('findLicensesByMomentId()', () => {
+    it('throws NotFoundException when moment does not exist', async () => {
+      mockMomentsRepository.exists.mockResolvedValue(false);
+
+      await expect(service.findLicensesByMomentId('non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('returns active licenses ordered by price ascending', async () => {
+      mockMomentsRepository.exists.mockResolvedValue(true);
+
+      const license = new MomentLicenseEntity();
+      license.id = 'license-uuid';
+      license.name = 'Editorial';
+      license.price = 29.99;
+      license.isActive = true;
+
+      mockLicensesRepository.find.mockResolvedValue([license]);
+
+      const result = await service.findLicensesByMomentId('test-uuid-1234');
+
+      expect(mockLicensesRepository.find).toHaveBeenCalledWith({
+        where: { momentId: 'test-uuid-1234', isActive: true, deletedAt: undefined },
+        order: { price: 'ASC' },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Editorial');
+    });
+
+    it('returns empty array when no active licenses exist', async () => {
+      mockMomentsRepository.exists.mockResolvedValue(true);
+      mockLicensesRepository.find.mockResolvedValue([]);
+
+      const result = await service.findLicensesByMomentId('test-uuid-1234');
+
+      expect(result).toHaveLength(0);
     });
   });
 
@@ -241,7 +370,7 @@ describe('MomentsService', () => {
     it('returns moments sorted by capturedAt DESC', async () => {
       const moment = mockMoment();
       const qb = buildMockQueryBuilder([moment], 1);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const result = await service.findRecent(5);
 
@@ -252,7 +381,7 @@ describe('MomentsService', () => {
 
     it('uses default limit of 10', async () => {
       const qb = buildMockQueryBuilder([], 0);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       await service.findRecent();
 
@@ -261,7 +390,7 @@ describe('MomentsService', () => {
 
     it('filters out soft-deleted moments', async () => {
       const qb = buildMockQueryBuilder([], 0);
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       await service.findRecent();
 
@@ -288,7 +417,7 @@ describe('MomentsService', () => {
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
       };
-      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
       const result = await service.getFacets();
 
