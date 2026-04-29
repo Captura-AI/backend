@@ -56,7 +56,7 @@ export class AuthenticationService {
   }
 
   private async _issueTokens(user: IRequestUser): Promise<IAuthTokens> {
-    const payload = { email: user.email, sub: user.id, username: user.username };
+    const payload = { email: user.email, role: user.role, sub: user.id, username: user.username };
     const accessToken = this._jwtService.sign(payload);
 
     const refreshPayload = { sub: user.id, type: 'refresh' };
@@ -155,6 +155,7 @@ export class AuthenticationService {
       const requestUser: IRequestUser = {
         email: user.email ?? '',
         id: user.id,
+        role: user.role,
         username: user.username ?? '',
       };
 
@@ -205,6 +206,7 @@ export class AuthenticationService {
     const requestUser: IRequestUser = {
       email: user.email ?? '',
       id: user.id,
+      role: user.role,
       username: user.username ?? '',
     };
 
@@ -217,6 +219,7 @@ export class AuthenticationService {
     const requestUser: IRequestUser = {
       email: user.email ?? '',
       id: user.id,
+      role: user.role,
       username: user.username ?? '',
     };
 
@@ -250,6 +253,7 @@ export class AuthenticationService {
     const requestUser: IRequestUser = {
       email: user.email ?? '',
       id: user.id,
+      role: user.role,
       username: user.username ?? '',
     };
 

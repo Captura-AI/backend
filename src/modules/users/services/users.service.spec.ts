@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { ListOptionDto } from '../../../common/dtos/list-options.dto';
+import { PhotographerProfileEntity } from '../../photographers/entities/photographer-profile.entity';
 import { UsersEntity } from '../entities/users.entity';
 import { UsersService } from './users.service';
 
@@ -33,6 +34,10 @@ const mockRepo = {
   save: jest.fn(),
 };
 
+const mockProfileRepo = {
+  findOne: jest.fn(),
+};
+
 const mockDataSource = {
   transaction: jest.fn(),
 };
@@ -45,6 +50,7 @@ describe('UsersService', () => {
       providers: [
         UsersService,
         { provide: getRepositoryToken(UsersEntity), useValue: mockRepo },
+        { provide: getRepositoryToken(PhotographerProfileEntity), useValue: mockProfileRepo },
         { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
@@ -127,6 +133,17 @@ describe('UsersService', () => {
       mockRepo.findOne.mockResolvedValue(null);
       const result = await service.findOneByEmail('nobody@test.com');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getMe', () => {
+    it('returns user with photographerProfile when found', async () => {
+      mockRepo.findOne.mockResolvedValue(mockUser);
+      mockProfileRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.getMe('uuid-1');
+
+      expect(result).toMatchObject({ ...mockUser, photographerProfile: null });
     });
   });
 

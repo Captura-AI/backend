@@ -4,6 +4,9 @@ import { Exclude } from 'class-transformer';
 // Entities
 import { AppBaseEntity } from '../../../common/entities/base.entity';
 
+// Enums
+import { UserRoleEnum } from '../enums/user-role.enum';
+
 // NestJS Libraries
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -55,4 +58,8 @@ export class UsersEntity extends AppBaseEntity {
   @ApiProperty({ default: false })
   @Column({ name: 'is_phone_verified', type: 'boolean', default: false })
   public isPhoneVerified!: boolean;
+
+  @ApiProperty({ enum: UserRoleEnum, default: UserRoleEnum.USER })
+  @Column({ name: 'role', type: 'enum', enum: UserRoleEnum, default: UserRoleEnum.USER })
+  public role!: UserRoleEnum;
 }

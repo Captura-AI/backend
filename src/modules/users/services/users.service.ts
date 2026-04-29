@@ -9,6 +9,7 @@ import { PageMetaDto } from '../../../common/dtos/page-meta.dto';
 import { UpdateUserDto } from '../dtos/update-user.dto';
 
 // Entities
+import { PhotographerProfileEntity } from '../../photographers/entities/photographer-profile.entity';
 import { UsersEntity } from '../entities/users.entity';
 
 // Helpers
@@ -29,6 +30,8 @@ export class UsersService {
   constructor(
     @InjectRepository(UsersEntity)
     private readonly _usersRepository: Repository<UsersEntity>,
+    @InjectRepository(PhotographerProfileEntity)
+    private readonly _photographerProfileRepository: Repository<PhotographerProfileEntity>,
     private readonly _dataSource: DataSource,
   ) {}
 
@@ -270,6 +273,20 @@ export class UsersService {
         description: err.response?.error ?? err.message,
       });
     }
+  }
+
+  /**
+   * @description Get current user's profile including photographer profile if applicable
+   */
+  public async getMe(
+    userId: string,
+  ): Promise<UsersEntity & { photographerProfile: PhotographerProfileEntity | null }> {
+    const user = await this.findOneById(userId);
+    const photographerProfile = await this._photographerProfileRepository.findOne({
+      where: { userId },
+    });
+
+    return Object.assign(user, { photographerProfile: photographerProfile ?? null });
   }
 
   /**

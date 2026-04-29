@@ -1,1 +1,2 @@
-npx --no-install commitlint --edit "$1"
+export PATH="/Users/mohbaswandegorie/.nvm/versions/node/v22.17.0/bin:$PATH"
+node_modules/.bin/commitlint --edit "$1"

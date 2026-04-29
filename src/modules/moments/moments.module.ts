@@ -2,6 +2,7 @@
 import { MomentsController } from './controllers/moments.controller';
 
 // Entities
+import { MomentCollaboratorEntity } from './entities/moment-collaborator.entity';
 import { MomentEntity } from './entities/moments.entity';
 
 // NestJS Libraries
@@ -14,7 +15,7 @@ import { MomentsService } from './services/moments.service';
 @Module({
   controllers: [MomentsController],
   exports: [MomentsService],
-  imports: [TypeOrmModule.forFeature([MomentEntity])],
+  imports: [TypeOrmModule.forFeature([MomentCollaboratorEntity, MomentEntity])],
   providers: [MomentsService],
 })
 export class MomentsModule {}
