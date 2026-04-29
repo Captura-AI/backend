@@ -44,3 +44,12 @@ export interface IMomentAiAnalysis {
   objectDetection?: unknown;
   personAttributes?: unknown;
 }
+
+export interface IPhotographerSummary {
+  id: string;
+  artistName: string;
+  bio: string | null;
+  location: string | null;
+  avatar: string | null;
+  totalMoments: number;
+}

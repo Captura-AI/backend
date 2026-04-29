@@ -3,6 +3,7 @@ import { SearchMomentDto } from '../dtos/search-moment.dto';
 
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
+import { MomentLicenseEntity } from '../entities/moment-license.entity';
 
 // NestJS Libraries
 import type { TestingModule } from '@nestjs/testing';
@@ -15,8 +16,10 @@ import { MomentsService } from '../services/moments.service';
 import { MomentsController } from './moments.controller';
 
 const mockMomentsService = {
+  findLicensesByMomentId: jest.fn(),
   findOneById: jest.fn(),
   findRecent: jest.fn(),
+  findSimilar: jest.fn(),
   getFacets: jest.fn(),
   search: jest.fn(),
 };
@@ -82,16 +85,71 @@ describe('MomentsController', () => {
     });
   });
 
+  describe('findSimilar()', () => {
+    it('calls service with parsed limit and returns similar moments', async () => {
+      const similar: MomentEntity[] = [new MomentEntity()];
+      mockMomentsService.findSimilar.mockResolvedValue(similar);
+
+      const response = await controller.findSimilar({ id: 'test-uuid' }, '5');
+
+      expect(mockMomentsService.findSimilar).toHaveBeenCalledWith('test-uuid', 5);
+      expect(response.result).toEqual(similar);
+      expect(response.message).toBe('Similar moments retrieved successfully');
+    });
+
+    it('uses default limit 10 when no query param provided', async () => {
+      mockMomentsService.findSimilar.mockResolvedValue([]);
+
+      await controller.findSimilar({ id: 'test-uuid' }, undefined);
+
+      expect(mockMomentsService.findSimilar).toHaveBeenCalledWith('test-uuid', 10);
+    });
+
+    it('caps limit at 50', async () => {
+      mockMomentsService.findSimilar.mockResolvedValue([]);
+
+      await controller.findSimilar({ id: 'test-uuid' }, '999');
+
+      expect(mockMomentsService.findSimilar).toHaveBeenCalledWith('test-uuid', 50);
+    });
+  });
+
+  describe('findLicenses()', () => {
+    it('returns licenses for a moment', async () => {
+      const license = new MomentLicenseEntity();
+      license.name = 'Editorial';
+      license.price = 29.99;
+
+      mockMomentsService.findLicensesByMomentId.mockResolvedValue([license]);
+
+      const response = await controller.findLicenses({ id: 'test-uuid' });
+
+      expect(mockMomentsService.findLicensesByMomentId).toHaveBeenCalledWith('test-uuid');
+      expect(response.result).toHaveLength(1);
+      expect(response.message).toBe('Moment licenses retrieved successfully');
+    });
+
+    it('returns empty array when no licenses available', async () => {
+      mockMomentsService.findLicensesByMomentId.mockResolvedValue([]);
+
+      const response = await controller.findLicenses({ id: 'test-uuid' });
+
+      expect(response.result).toHaveLength(0);
+    });
+  });
+
   describe('findOneById()', () => {
-    it('returns moment by id from service', async () => {
+    it('returns full moment detail with photographer summary', async () => {
       const moment = new MomentEntity();
       moment.id = 'test-uuid';
-      mockMomentsService.findOneById.mockResolvedValue(moment);
+      const momentWithSummary = Object.assign(moment, { photographerSummary: null });
+
+      mockMomentsService.findOneById.mockResolvedValue(momentWithSummary);
 
       const response = await controller.findOneById({ id: 'test-uuid' });
 
       expect(mockMomentsService.findOneById).toHaveBeenCalledWith('test-uuid');
-      expect(response.result).toEqual(moment);
+      expect(response.result).toEqual(momentWithSummary);
     });
   });
 });

@@ -9,12 +9,13 @@ import { TIME_OF_DAY_HOURS, TimeOfDayEnum } from '../dtos/time-filter.dto';
 
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
+import { MomentLicenseEntity } from '../entities/moment-license.entity';
 
 // Helpers
 import { QuerySortingHelper } from '../../../common/helpers/query-sorting.helper';
 
 // Interfaces
-import type { IMomentFacets } from '../interfaces/moments.interface';
+import type { IMomentFacets, IPhotographerSummary } from '../interfaces/moments.interface';
 
 // NestJS Libraries
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -31,10 +32,24 @@ export class MomentsService {
   constructor(
     @InjectRepository(MomentEntity)
     private readonly _momentsRepository: Repository<MomentEntity>,
+    @InjectRepository(MomentLicenseEntity)
+    private readonly _momentLicensesRepository: Repository<MomentLicenseEntity>,
   ) {}
 
   private _addRelations(query: SelectQueryBuilder<MomentEntity>): void {
     query.leftJoinAndSelect('moments.photographer', 'photographer');
+  }
+
+  private _addDetailRelations(query: SelectQueryBuilder<MomentEntity>): void {
+    query
+      .leftJoinAndSelect('moments.photographer', 'photographer')
+      .leftJoinAndSelect('moments.photographerProfile', 'photographerProfile')
+      .leftJoinAndSelect('photographerProfile.user', 'photographerUser')
+      .leftJoinAndSelect(
+        'moments.licenses',
+        'licenses',
+        'licenses.is_active = true AND licenses.deleted_at IS NULL',
+      );
   }
 
   private _searchData(filters: SearchMomentDto, query: SelectQueryBuilder<MomentEntity>): void {
@@ -173,16 +188,94 @@ export class MomentsService {
     }
   }
 
-  public async findOneById(id: string): Promise<MomentEntity> {
-    const moment = await this._momentsRepository.findOne({
-      where: { id, deletedAt: undefined },
-    });
+  public async findOneById(
+    id: string,
+  ): Promise<MomentEntity & { photographerSummary: IPhotographerSummary | null }> {
+    const query = this._momentsRepository.createQueryBuilder('moments');
+
+    this._addDetailRelations(query);
+    query.where('moments.id = :id', { id }).andWhere(SOFT_DELETE_FILTER);
+
+    const moment = await query.getOne();
 
     if (!moment) {
       throw new NotFoundException(`Moment with id ${id} not found.`);
     }
 
-    return moment;
+    let photographerSummary: IPhotographerSummary | null = null;
+
+    if (moment.photographerProfile) {
+      const totalMoments = await this._momentsRepository.count({
+        where: {
+          photographerProfileId: moment.photographerProfileId ?? undefined,
+          deletedAt: undefined,
+        },
+      });
+
+      photographerSummary = {
+        id: moment.photographerProfile.id,
+        artistName: moment.photographerProfile.artistName,
+        bio: moment.photographerProfile.bio,
+        location: moment.photographerProfile.location,
+        avatar: moment.photographerProfile.user?.avatar ?? null,
+        totalMoments,
+      };
+    }
+
+    return Object.assign(moment, { photographerSummary });
+  }
+
+  public async findSimilar(momentId: string, limit = 10): Promise<MomentEntity[]> {
+    const source = await this._momentsRepository.findOne({
+      where: { id: momentId, deletedAt: undefined },
+      select: ['id', 'city', 'vehicleType'],
+    });
+
+    if (!source) {
+      throw new NotFoundException(`Moment with id ${momentId} not found.`);
+    }
+
+    const query = this._momentsRepository
+      .createQueryBuilder('moments')
+      .where(SOFT_DELETE_FILTER)
+      .andWhere('moments.id != :momentId', { momentId });
+
+    this._addRelations(query);
+
+    // Phase 1: match by same city or same vehicle type
+    const conditions: string[] = [];
+    const params: Record<string, unknown> = {};
+
+    if (source.city) {
+      conditions.push('moments.city = :city');
+      params['city'] = source.city;
+    }
+
+    if (source.vehicleType) {
+      conditions.push('moments.vehicle_type = :vehicleType');
+      params['vehicleType'] = source.vehicleType;
+    }
+
+    if (conditions.length > 0) {
+      query.andWhere(`(${conditions.join(' OR ')})`, params);
+    }
+
+    return query.orderBy(COL_CAPTURED_AT, 'DESC').take(limit).getMany();
+  }
+
+  public async findLicensesByMomentId(momentId: string): Promise<MomentLicenseEntity[]> {
+    const momentExists = await this._momentsRepository.exists({
+      where: { id: momentId, deletedAt: undefined },
+    });
+
+    if (!momentExists) {
+      throw new NotFoundException(`Moment with id ${momentId} not found.`);
+    }
+
+    return this._momentLicensesRepository.find({
+      where: { momentId, isActive: true, deletedAt: undefined },
+      order: { price: 'ASC' },
+    });
   }
 
   public async findRecent(limit = 10): Promise<MomentEntity[]> {
