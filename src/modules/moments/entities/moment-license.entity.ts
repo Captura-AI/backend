@@ -1,5 +1,6 @@
 // Entities
 import { AppBaseEntity } from '../../../common/entities/base.entity';
+import { LicenseTypeEntity } from '../../license-types/entities/license-type.entity';
 import { MomentEntity } from './moments.entity';
 
 // NestJS Libraries
@@ -20,27 +21,25 @@ export class MomentLicenseEntity extends AppBaseEntity {
   @JoinColumn({ name: 'moment_id' })
   public moment?: Relation<MomentEntity>;
 
-  // ─── License Info ─────────────────────────────────────────────────────────────
+  // ─── License Type Relation ───────────────────────────────────────────────────
 
-  @ApiProperty({ example: 'Editorial' })
-  @Column({ name: 'name', type: 'varchar', length: 100 })
-  public name!: string;
+  @ApiProperty({ nullable: true, description: 'FK to license_types.id' })
+  @Column({ name: 'license_type_id', type: 'uuid', nullable: true })
+  public licenseTypeId!: string | null;
 
-  @ApiProperty({ nullable: true, example: 'For non-commercial editorial use only' })
-  @Column({ name: 'description', type: 'text', nullable: true })
-  public description!: string | null;
+  @ManyToOne(() => LicenseTypeEntity, { onDelete: 'SET NULL', nullable: true, eager: false })
+  @JoinColumn({ name: 'license_type_id' })
+  public licenseType?: Relation<LicenseTypeEntity> | null;
 
-  @ApiProperty({ example: 29.99 })
+  // ─── Pricing ─────────────────────────────────────────────────────────────────
+
+  @ApiProperty({ example: 29.99, description: 'Photographer-set price for this license type' })
   @Column({ name: 'price', type: 'decimal', precision: 10, scale: 2 })
   public price!: number;
 
   @ApiProperty({ default: 'USD', example: 'USD' })
   @Column({ name: 'currency', type: 'varchar', length: 10, default: 'USD' })
   public currency!: string;
-
-  @ApiProperty({ nullable: true, example: 'Unlimited prints, no resale' })
-  @Column({ name: 'usage_rights', type: 'text', nullable: true })
-  public usageRights!: string | null;
 
   @ApiProperty({ default: true })
   @Column({ name: 'is_active', type: 'boolean', default: true })

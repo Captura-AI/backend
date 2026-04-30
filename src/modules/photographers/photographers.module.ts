@@ -1,11 +1,19 @@
 // Entities
+import { MomentEntity } from '../moments/entities/moments.entity';
+import { MomentLicenseEntity } from '../moments/entities/moment-license.entity';
 import { PhotographerProfileEntity } from './entities/photographer-profile.entity';
 
 // Modules
 import { UsersModule } from '../users/users.module';
 
+// Multer
+import type { Request } from 'express';
+import type { StorageEngine } from 'multer';
+import { diskStorage } from 'multer';
+
 // NestJS Libraries
 import { Module } from '@nestjs/common';
+import { MulterModule } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Controllers
@@ -14,10 +22,38 @@ import { PhotographersController } from './controllers/photographers.controller'
 // Services
 import { PhotographersService } from './services/photographers.service';
 
+type MulterFilterCallback = (error: Error | null, acceptFile: boolean) => void;
+
+const momentStorage: StorageEngine = diskStorage({
+  destination: './uploads/moments',
+  filename: (
+    _req: Request,
+    file: Express.Multer.File,
+    cb: (error: Error | null, filename: string) => void,
+  ) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+
+const momentFileFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: MulterFilterCallback,
+): void => {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  cb(null, allowed.includes(file.mimetype));
+};
+
 @Module({
-  imports: [TypeOrmModule.forFeature([PhotographerProfileEntity]), UsersModule],
   controllers: [PhotographersController],
-  providers: [PhotographersService],
   exports: [PhotographersService],
+  imports: [
+    TypeOrmModule.forFeature([MomentEntity, MomentLicenseEntity, PhotographerProfileEntity]),
+    MulterModule.register({
+      fileFilter: momentFileFilter,
+      limits: { fileSize: 10 * 1024 * 1024 },
+      storage: momentStorage,
+    }),
+    UsersModule,
+  ],
+  providers: [PhotographersService],
 })
 export class PhotographersModule {}
