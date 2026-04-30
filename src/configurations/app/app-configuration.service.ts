@@ -82,4 +82,31 @@ export class AppConfigurationsService {
   get throttleLimit(): number {
     return this._configurationsService.getOrThrow<number>('app.throttleLimit');
   }
+
+  get midtransServerKey(): string {
+    return this._configurationsService.get<string>('app.midtransServerKey') ?? '';
+  }
+
+  get midtransClientKey(): string {
+    return this._configurationsService.get<string>('app.midtransClientKey') ?? '';
+  }
+
+  get midtransIsProduction(): boolean {
+    return this._configurationsService.get<string>('app.midtransIsProduction') === 'true';
+  }
+
+  get serviceFeeRate(): number {
+    const raw = this._configurationsService.get<string>('app.serviceFeeRate');
+    return raw ? parseFloat(raw) : 0.05;
+  }
+
+  get taxRate(): number {
+    const raw = this._configurationsService.get<string>('app.taxRate');
+    return raw ? parseFloat(raw) : 0.11;
+  }
+
+  get paymentExpiryMinutes(): number {
+    const raw = this._configurationsService.get<string>('app.paymentExpiryMinutes');
+    return raw ? parseInt(raw, 10) : 60;
+  }
 }
