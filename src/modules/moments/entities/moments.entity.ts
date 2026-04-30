@@ -52,6 +52,10 @@ export class MomentEntity extends AppBaseEntity {
   @Column({ name: 'tags', type: 'simple-array', nullable: true })
   public tags!: string[] | null;
 
+  @ApiProperty({ nullable: true, description: 'Camera model and settings used' })
+  @Column({ name: 'camera_info', type: 'varchar', length: 255, nullable: true })
+  public cameraInfo!: string | null;
+
   // ─── Location ────────────────────────────────────────────────────────────────
 
   @ApiProperty({ nullable: true })

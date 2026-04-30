@@ -1,7 +1,11 @@
 // DTOs
+import { CreateMomentDto } from '../../moments/dtos/create-moment.dto';
+import { ListMyMomentsDto } from '../../moments/dtos/list-my-moments.dto';
 import { OnboardPhotographerDto } from '../dtos/onboard-photographer.dto';
+import { UpdateMomentDto } from '../../moments/dtos/update-moment.dto';
 
 // Entities
+import { MomentEntity } from '../../moments/entities/moments.entity';
 import { PhotographerProfileEntity } from '../entities/photographer-profile.entity';
 
 // Enums
@@ -29,24 +33,44 @@ const mockProfile = (): PhotographerProfileEntity => {
   return profile;
 };
 
+const mockMoment = (): MomentEntity => {
+  const moment = new MomentEntity();
+  moment.id = 'moment-uuid-1';
+  moment.caption = 'A beautiful sunset';
+  moment.photographerId = 'user-uuid-1';
+  moment.photographerProfileId = 'profile-uuid-1';
+  moment.slug = 'a-beautiful-sunset-1700000000000';
+  return moment;
+};
+
 const mockRequestUser = (): IRequestUser => ({
   email: 'test@test.com',
   id: 'user-uuid-1',
-  role: UserRoleEnum.USER as TUserRole,
+  role: UserRoleEnum.PHOTOGRAPHER as TUserRole,
   username: 'testuser',
 });
 
 describe('PhotographersController', () => {
   let controller: PhotographersController;
   let mockPhotographersService: {
+    createMoment: jest.Mock;
+    deleteMyMoment: jest.Mock;
     findById: jest.Mock;
+    findMyMomentById: jest.Mock;
+    findMyMoments: jest.Mock;
     onboard: jest.Mock;
+    updateMyMoment: jest.Mock;
   };
 
   beforeEach(async () => {
     mockPhotographersService = {
+      createMoment: jest.fn(),
+      deleteMyMoment: jest.fn(),
       findById: jest.fn(),
+      findMyMomentById: jest.fn(),
+      findMyMoments: jest.fn(),
       onboard: jest.fn(),
+      updateMyMoment: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -98,6 +122,126 @@ describe('PhotographersController', () => {
         message: 'Photographer profile retrieved successfully',
         result: profile,
       });
+    });
+  });
+
+  describe('createMoment()', () => {
+    it('calls service.createMoment with userId, dto and file, returns result', async () => {
+      const moment = mockMoment();
+      const user = mockRequestUser();
+      const dto = new CreateMomentDto();
+      dto.caption = 'A beautiful sunset';
+      const imageFile = { path: 'uploads/moments/test.jpg' } as Express.Multer.File;
+
+      mockPhotographersService.createMoment.mockResolvedValue(moment);
+
+      const response = await controller.createMoment(user, dto, imageFile);
+
+      expect(mockPhotographersService.createMoment).toHaveBeenCalledWith(
+        'user-uuid-1',
+        dto,
+        imageFile,
+      );
+      expect(response).toEqual({
+        message: 'Moment uploaded successfully',
+        result: moment,
+      });
+    });
+
+    it('calls service.createMoment without file when not provided', async () => {
+      const moment = mockMoment();
+      const user = mockRequestUser();
+      const dto = new CreateMomentDto();
+      dto.caption = 'A beautiful sunset';
+
+      mockPhotographersService.createMoment.mockResolvedValue(moment);
+
+      const response = await controller.createMoment(user, dto);
+
+      expect(mockPhotographersService.createMoment).toHaveBeenCalledWith(
+        'user-uuid-1',
+        dto,
+        undefined,
+      );
+      expect(response.message).toBe('Moment uploaded successfully');
+    });
+  });
+
+  describe('findMyMoments()', () => {
+    it('calls service.findMyMoments with userId and query, returns result', async () => {
+      const moments = [mockMoment()];
+      const paginatedResult = { data: moments, limit: 10, offset: 1, total: 1 };
+      const user = mockRequestUser();
+      const query = new ListMyMomentsDto();
+
+      mockPhotographersService.findMyMoments.mockResolvedValue(paginatedResult);
+
+      const response = await controller.findMyMoments(user, query);
+
+      expect(mockPhotographersService.findMyMoments).toHaveBeenCalledWith('user-uuid-1', query);
+      expect(response).toEqual({
+        message: 'My moments retrieved successfully',
+        result: paginatedResult,
+      });
+    });
+  });
+
+  describe('findMyMomentById()', () => {
+    it('calls service.findMyMomentById with userId and momentId, returns result', async () => {
+      const moment = mockMoment();
+      const user = mockRequestUser();
+
+      mockPhotographersService.findMyMomentById.mockResolvedValue(moment);
+
+      const response = await controller.findMyMomentById(user, { id: 'moment-uuid-1' });
+
+      expect(mockPhotographersService.findMyMomentById).toHaveBeenCalledWith(
+        'user-uuid-1',
+        'moment-uuid-1',
+      );
+      expect(response).toEqual({
+        message: 'Moment detail retrieved successfully',
+        result: moment,
+      });
+    });
+  });
+
+  describe('updateMyMoment()', () => {
+    it('calls service.updateMyMoment with userId, momentId and dto, returns result', async () => {
+      const moment = mockMoment();
+      const user = mockRequestUser();
+      const dto = new UpdateMomentDto();
+      dto.caption = 'Updated caption';
+
+      mockPhotographersService.updateMyMoment.mockResolvedValue(moment);
+
+      const response = await controller.updateMyMoment(user, { id: 'moment-uuid-1' }, dto);
+
+      expect(mockPhotographersService.updateMyMoment).toHaveBeenCalledWith(
+        'user-uuid-1',
+        'moment-uuid-1',
+        dto,
+      );
+      expect(response).toEqual({
+        message: 'Moment updated successfully',
+        result: moment,
+      });
+    });
+  });
+
+  describe('deleteMyMoment()', () => {
+    it('calls service.deleteMyMoment with userId and momentId, returns void', async () => {
+      const user = mockRequestUser();
+
+      mockPhotographersService.deleteMyMoment.mockResolvedValue(undefined);
+
+      const response = await controller.deleteMyMoment(user, { id: 'moment-uuid-1' });
+
+      expect(mockPhotographersService.deleteMyMoment).toHaveBeenCalledWith(
+        'user-uuid-1',
+        'moment-uuid-1',
+      );
+      expect(response).toBeUndefined();
     });
   });
 });
