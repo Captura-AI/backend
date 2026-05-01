@@ -101,6 +101,8 @@ export class OrdersService {
     const discountAmount = 0;
     const totalAmount = subtotal + serviceFee + taxAmount - discountAmount;
 
+    let savedOrderId: string | undefined;
+
     try {
       const order = new OrderEntity();
       order.billingInfo = billingInfo;
@@ -119,6 +121,7 @@ export class OrdersService {
       order.userId = userId;
 
       const savedOrder = await this._orderRepository.save(order);
+      savedOrderId = savedOrder.id;
 
       const orderItem = new OrderItemEntity();
       orderItem.currency = license.currency;
@@ -148,6 +151,16 @@ export class OrdersService {
 
       return { order: savedOrder, paymentExpiredAt, redirectUrl, snapToken: token };
     } catch (error: unknown) {
+      // If the order was persisted before Midtrans failed, mark it FAILED so it doesn't
+      // appear as a ghost PENDING order in the user's history.
+      if (savedOrderId) {
+        try {
+          await this._orderRepository.update(savedOrderId, { status: OrderStatusEnum.FAILED });
+        } catch {
+          // Ignore cleanup failure — the order will remain PENDING and expire naturally.
+        }
+      }
+
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException ||

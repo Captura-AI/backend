@@ -36,7 +36,7 @@ type MomentScalarUpdate = {
   aiAnalysis?: Record<string, unknown> | null;
   cameraInfo?: string | null;
   capturedAt?: number | null;
-  embedding?: number[] | null;
+  embeddingVector?: number[] | null;
   latitude?: number | null;
   licensePlate?: string | null;
   longitude?: number | null;
@@ -97,7 +97,7 @@ export class AiAnalysisService {
 
       const updatePayload: MomentScalarUpdate = {
         aiAnalysis: data as unknown as Record<string, unknown>,
-        embedding: data.embedding ?? null,
+        embeddingVector: data.embedding ?? null,
         ...buildAutoFillFields(moment, data),
       };
 
@@ -118,9 +118,16 @@ export class AiAnalysisService {
   ): Promise<IAiAnalysisResponse | null> {
     let response: Response;
 
+    // Ensure the AI service receives an absolute HTTP URL — locally-served uploads
+    // are stored as relative paths (e.g. uploads/moments/...) and must be prefixed
+    // with the external base URL so the Python service can fetch them.
+    const absoluteImageUrl = imageUrl.startsWith('http')
+      ? imageUrl
+      : `${this._config.apiExternalBaseUrl.replace(/\/$/, '')}/${imageUrl}`;
+
     try {
       response = await fetch(`${this._config.aiServiceUrl}/analyze`, {
-        body: JSON.stringify({ image_url: imageUrl, moment_id: momentId }),
+        body: JSON.stringify({ image_url: absoluteImageUrl, moment_id: momentId }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });

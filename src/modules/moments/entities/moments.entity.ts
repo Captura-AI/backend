@@ -130,4 +130,27 @@ export class MomentEntity extends AppBaseEntity {
   })
   @Column({ name: 'embedding', type: 'simple-json', nullable: true })
   public embedding!: number[] | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: [Number],
+    description:
+      'CLIP embedding vector (512-dim) stored in pgvector column for semantic similarity search',
+  })
+  @Column({
+    name: 'embedding_vector',
+    nullable: true,
+    transformer: {
+      from: (v: string | null): number[] | null => {
+        if (!v) return null;
+        return v
+          .replace(/^\[|\]$/g, '')
+          .split(',')
+          .map(Number);
+      },
+      to: (v: number[] | null): string | null => (v ? `[${v.join(',')}]` : null),
+    },
+    type: 'text',
+  })
+  public embeddingVector!: number[] | null;
 }

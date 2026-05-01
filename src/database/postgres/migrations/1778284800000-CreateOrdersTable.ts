@@ -49,6 +49,12 @@ export class CreateOrdersTable1778284800000 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "idx_orders_download_token"
+      ON "orders" ("download_token")
+      WHERE "download_token" IS NOT NULL
+    `);
+
+    await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "order_items" (
         "id"           UUID          NOT NULL DEFAULT uuid_generate_v4(),
         "order_id"     UUID          NOT NULL,
@@ -83,6 +89,7 @@ export class CreateOrdersTable1778284800000 implements MigrationInterface {
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_order_items_order_id"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "order_items"`);
 
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_orders_download_token"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_orders_moment_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_orders_status"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_orders_user_id"`);

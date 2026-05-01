@@ -80,13 +80,17 @@ export class MidtransService {
     grossAmount: string,
     incomingSignature: string,
   ): boolean {
-    const expectedHash = createHash('sha512')
-      .update(`${orderId}${statusCode}${grossAmount}${this._config.midtransServerKey}`)
-      .digest('hex');
+    try {
+      const expectedHash = createHash('sha512')
+        .update(`${orderId}${statusCode}${grossAmount}${this._config.midtransServerKey}`)
+        .digest('hex');
 
-    const expected = Buffer.from(expectedHash, 'hex');
-    const incoming = Buffer.from(incomingSignature, 'hex');
-    return expected.length === incoming.length && timingSafeEqual(expected, incoming);
+      const expected = Buffer.from(expectedHash, 'hex');
+      const incoming = Buffer.from(incomingSignature, 'hex');
+      return expected.length === incoming.length && timingSafeEqual(expected, incoming);
+    } catch {
+      return false;
+    }
   }
 
   public mapTransactionStatus(transactionStatus: string, fraudStatus?: string): OrderStatusEnum {
