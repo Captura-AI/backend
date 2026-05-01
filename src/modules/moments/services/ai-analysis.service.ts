@@ -60,13 +60,13 @@ function buildAutoFillFields(moment: MomentEntity, data: IAiAnalysisResponse): M
   if (!moment.licensePlate && data.license_plate) {
     fields.licensePlate = data.license_plate;
   }
-  if (!moment.latitude && data.exif?.latitude) {
+  if (moment.latitude == null && data.exif?.latitude != null) {
     fields.latitude = data.exif.latitude;
   }
-  if (!moment.longitude && data.exif?.longitude) {
+  if (moment.longitude == null && data.exif?.longitude != null) {
     fields.longitude = data.exif.longitude;
   }
-  if (!moment.capturedAt && data.exif?.captured_at) {
+  if (moment.capturedAt == null && data.exif?.captured_at != null) {
     fields.capturedAt = data.exif.captured_at;
   }
   if (!moment.cameraInfo && data.exif?.camera_model) {
@@ -88,22 +88,28 @@ export class AiAnalysisService {
   ) {}
 
   public async analyzeMoment(momentId: string, imageUrl: string): Promise<void> {
-    const data = await this._callAiService(momentId, imageUrl);
-    if (!data) return;
+    try {
+      const data = await this._callAiService(momentId, imageUrl);
+      if (!data) return;
 
-    const moment = await this._momentRepository.findOne({ where: { id: momentId } });
-    if (!moment) return;
+      const moment = await this._momentRepository.findOne({ where: { id: momentId } });
+      if (!moment) return;
 
-    const updatePayload: MomentScalarUpdate = {
-      aiAnalysis: data as unknown as Record<string, unknown>,
-      embedding: data.embedding ?? null,
-      ...buildAutoFillFields(moment, data),
-    };
+      const updatePayload: MomentScalarUpdate = {
+        aiAnalysis: data as unknown as Record<string, unknown>,
+        embedding: data.embedding ?? null,
+        ...buildAutoFillFields(moment, data),
+      };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await this._momentRepository.update(momentId, updatePayload as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await this._momentRepository.update(momentId, updatePayload as any);
 
-    this._logger.log(`AI analysis complete for moment ${momentId} in ${data.processing_time_ms}ms`);
+      this._logger.log(
+        `AI analysis complete for moment ${momentId} in ${data.processing_time_ms}ms`,
+      );
+    } catch (err) {
+      this._logger.warn(`AI analysis failed for moment ${momentId}: ${err}`);
+    }
   }
 
   private async _callAiService(

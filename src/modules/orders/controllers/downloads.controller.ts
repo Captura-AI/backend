@@ -14,7 +14,7 @@ export class DownloadsController {
   @ApiOperation({
     summary: 'Download purchased moment using a download token',
     description:
-      'Public endpoint — no JWT required. Returns a time-limited URL for the original image. The download token is a single-use UUID generated when the order is marked PAID.',
+      'Public endpoint — no JWT required. Returns the original image URL for a PAID order. The download token is a UUID generated when the order is marked PAID.',
   })
   @ApiParam({ description: 'Download token from a PAID order', name: 'token' })
   public async downloadByToken(@Param('token') token: string) {

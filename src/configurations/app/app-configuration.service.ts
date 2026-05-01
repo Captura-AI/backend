@@ -84,11 +84,11 @@ export class AppConfigurationsService {
   }
 
   get midtransServerKey(): string {
-    return this._configurationsService.get<string>('app.midtransServerKey') ?? '';
+    return this._configurationsService.getOrThrow<string>('app.midtransServerKey');
   }
 
   get midtransClientKey(): string {
-    return this._configurationsService.get<string>('app.midtransClientKey') ?? '';
+    return this._configurationsService.getOrThrow<string>('app.midtransClientKey');
   }
 
   get midtransIsProduction(): boolean {
@@ -97,17 +97,20 @@ export class AppConfigurationsService {
 
   get serviceFeeRate(): number {
     const raw = this._configurationsService.get<string>('app.serviceFeeRate');
-    return raw ? parseFloat(raw) : 0.05;
+    const parsed = raw ? parseFloat(raw) : 0.05;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.05;
   }
 
   get taxRate(): number {
     const raw = this._configurationsService.get<string>('app.taxRate');
-    return raw ? parseFloat(raw) : 0.11;
+    const parsed = raw ? parseFloat(raw) : 0.11;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.11;
   }
 
   get paymentExpiryMinutes(): number {
     const raw = this._configurationsService.get<string>('app.paymentExpiryMinutes');
-    return raw ? parseInt(raw, 10) : 60;
+    const parsed = raw ? parseInt(raw, 10) : 60;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 60;
   }
 
   get aiServiceUrl(): string {

@@ -81,6 +81,12 @@ export class OrdersService {
       );
     }
 
+    if (license.currency !== 'IDR') {
+      throw new BadRequestException(
+        'Only IDR-denominated licenses can be purchased. The selected license is priced in a different currency.',
+      );
+    }
+
     const billingInfo: IBillingInfo = {
       country: dto.billingInfo.country,
       email: dto.billingInfo.email,
@@ -98,7 +104,7 @@ export class OrdersService {
     try {
       const order = new OrderEntity();
       order.billingInfo = billingInfo;
-      order.currency = 'IDR';
+      order.currency = license.currency;
       order.discountAmount = discountAmount;
       order.licenseId = license.id;
       order.momentId = moment.id;
@@ -115,7 +121,7 @@ export class OrdersService {
       const savedOrder = await this._orderRepository.save(order);
 
       const orderItem = new OrderItemEntity();
-      orderItem.currency = 'IDR';
+      orderItem.currency = license.currency;
       orderItem.licenseId = license.id;
       orderItem.momentId = moment.id;
       orderItem.orderId = savedOrder.id;

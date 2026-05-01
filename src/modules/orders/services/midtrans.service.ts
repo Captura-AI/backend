@@ -1,5 +1,5 @@
 // Crypto
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 
 // Entities
 import type { OrderEntity } from '../entities/order.entity';
@@ -48,8 +48,20 @@ export class MidtransService {
       item_details: [
         {
           id: order.licenseId ?? randomUUID(),
-          name: 'Moment License Purchase',
+          name: 'Moment License',
           price: Math.round(+order.subtotalAmount),
+          quantity: 1,
+        },
+        {
+          id: 'service-fee',
+          name: 'Service Fee',
+          price: Math.round(+order.serviceFee),
+          quantity: 1,
+        },
+        {
+          id: 'tax-ppn',
+          name: 'PPN Tax',
+          price: Math.round(+order.taxAmount),
           quantity: 1,
         },
       ],
@@ -72,7 +84,9 @@ export class MidtransService {
       .update(`${orderId}${statusCode}${grossAmount}${this._config.midtransServerKey}`)
       .digest('hex');
 
-    return expectedHash === incomingSignature;
+    const expected = Buffer.from(expectedHash, 'hex');
+    const incoming = Buffer.from(incomingSignature, 'hex');
+    return expected.length === incoming.length && timingSafeEqual(expected, incoming);
   }
 
   public mapTransactionStatus(transactionStatus: string, fraudStatus?: string): OrderStatusEnum {
