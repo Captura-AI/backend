@@ -14,6 +14,7 @@ export default registerAs('app', () => ({
   otelEnabled: process.env.OTEL_ENABLED,
   otelExportInterval: process.env.OTEL_EXPORT_INTERVAL,
   otelMetricsEnabled: process.env.OTEL_METRICS_ENABLED,
+  aiServiceUrl: process.env.AI_SERVICE_URL,
   paymentExpiryMinutes: process.env.PAYMENT_EXPIRY_MINUTES,
   serviceFeeRate: process.env.SERVICE_FEE_RATE,
   taxRate: process.env.TAX_RATE,

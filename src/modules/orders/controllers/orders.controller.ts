@@ -85,4 +85,21 @@ export class OrdersController {
       result,
     };
   }
+
+  @Get('orders/:id/download')
+  @UseGuards(AuthenticationJWTGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get download URL for a purchased moment',
+    description:
+      'Returns a time-limited download URL for the original image of a PAID order. Only the order owner can access this endpoint.',
+  })
+  public async download(@CurrentUser() user: IRequestUser, @Param() params: ParamIdDto) {
+    const result = await this._ordersService.generateDownloadUrl(params.id, user.id);
+
+    return {
+      message: 'Download URL generated successfully',
+      result,
+    };
+  }
 }

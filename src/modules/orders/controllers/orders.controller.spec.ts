@@ -16,6 +16,7 @@ import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 
 // Controllers
+import { DownloadsController } from './downloads.controller';
 import { OrdersController } from './orders.controller';
 import { WebhooksController } from './webhooks.controller';
 
@@ -42,12 +43,15 @@ const mockUser = (): IRequestUser => ({
 
 describe('OrdersController', () => {
   let controller: OrdersController;
+  let downloadsController: DownloadsController;
   let webhooksController: WebhooksController;
   let mockOrdersService: {
     cancelOrder: jest.Mock;
     checkout: jest.Mock;
     findMyOrders: jest.Mock;
     findOrderById: jest.Mock;
+    generateDownloadUrl: jest.Mock;
+    generateDownloadUrlByToken: jest.Mock;
     processWebhook: jest.Mock;
   };
 
@@ -57,21 +61,25 @@ describe('OrdersController', () => {
       checkout: jest.fn(),
       findMyOrders: jest.fn(),
       findOrderById: jest.fn(),
+      generateDownloadUrl: jest.fn(),
+      generateDownloadUrlByToken: jest.fn(),
       processWebhook: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [OrdersController, WebhooksController],
+      controllers: [DownloadsController, OrdersController, WebhooksController],
       providers: [{ provide: OrdersService, useValue: mockOrdersService }],
     }).compile();
 
     controller = module.get<OrdersController>(OrdersController);
+    downloadsController = module.get<DownloadsController>(DownloadsController);
     webhooksController = module.get<WebhooksController>(WebhooksController);
     jest.clearAllMocks();
   });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+    expect(downloadsController).toBeDefined();
     expect(webhooksController).toBeDefined();
   });
 
@@ -153,6 +161,49 @@ describe('OrdersController', () => {
       expect(response).toEqual({
         message: 'Order cancelled successfully',
         result: order,
+      });
+    });
+  });
+
+  describe('download()', () => {
+    it('calls service.generateDownloadUrl and returns result', async () => {
+      const user = mockUser();
+      const downloadResult = {
+        downloadUrl: 'https://storage.example.com/photo.jpg',
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        momentId: 'moment-uuid-1',
+        orderId: 'order-uuid-1',
+      };
+
+      mockOrdersService.generateDownloadUrl.mockResolvedValue(downloadResult);
+
+      const response = await controller.download(user, { id: 'order-uuid-1' });
+
+      expect(mockOrdersService.generateDownloadUrl).toHaveBeenCalledWith('order-uuid-1', user.id);
+      expect(response).toEqual({
+        message: 'Download URL generated successfully',
+        result: downloadResult,
+      });
+    });
+  });
+
+  describe('DownloadsController - downloadByToken()', () => {
+    it('calls service.generateDownloadUrlByToken and returns result', async () => {
+      const downloadResult = {
+        downloadUrl: 'https://storage.example.com/photo.jpg',
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        momentId: 'moment-uuid-1',
+        orderId: 'order-uuid-1',
+      };
+
+      mockOrdersService.generateDownloadUrlByToken.mockResolvedValue(downloadResult);
+
+      const response = await downloadsController.downloadByToken('dl-token-uuid');
+
+      expect(mockOrdersService.generateDownloadUrlByToken).toHaveBeenCalledWith('dl-token-uuid');
+      expect(response).toEqual({
+        message: 'Download URL generated successfully',
+        result: downloadResult,
       });
     });
   });

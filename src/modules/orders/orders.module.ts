@@ -2,6 +2,7 @@
 import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
 
 // Controllers
+import { DownloadsController } from './controllers/downloads.controller';
 import { OrdersController } from './controllers/orders.controller';
 import { WebhooksController } from './controllers/webhooks.controller';
 
@@ -22,7 +23,7 @@ import { MidtransService } from './services/midtrans.service';
 import { OrdersService } from './services/orders.service';
 
 @Module({
-  controllers: [OrdersController, WebhooksController],
+  controllers: [DownloadsController, OrdersController, WebhooksController],
   exports: [OrdersService],
   imports: [
     TypeOrmModule.forFeature([MomentEntity, MomentLicenseEntity, OrderEntity, OrderItemEntity]),

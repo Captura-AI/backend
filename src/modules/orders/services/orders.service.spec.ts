@@ -400,4 +400,76 @@ describe('OrdersService', () => {
       expect(mockOrderRepo.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('generateDownloadUrl()', () => {
+    it('returns download URL for a PAID order', async () => {
+      const order = mockOrder();
+      order.status = OrderStatusEnum.PAID;
+      order.downloadToken = 'dl-token-uuid';
+      order.moment = mockMoment() as any;
+      (order.moment as any).imageUrl = 'https://storage.example.com/photo.jpg';
+
+      mockOrderRepo.findOne.mockResolvedValue(order);
+
+      const result = await service.generateDownloadUrl('order-uuid-1', 'user-uuid-1');
+
+      expect(result.downloadUrl).toBe('https://storage.example.com/photo.jpg');
+      expect(result.orderId).toBe('order-uuid-1');
+      expect(result.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    });
+
+    it('throws BadRequestException when order is not PAID', async () => {
+      const order = mockOrder();
+      order.status = OrderStatusEnum.PENDING;
+      mockOrderRepo.findOne.mockResolvedValue(order);
+
+      await expect(service.generateDownloadUrl('order-uuid-1', 'user-uuid-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws NotFoundException when order not found', async () => {
+      mockOrderRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.generateDownloadUrl('non-existent', 'user-uuid-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('generateDownloadUrlByToken()', () => {
+    it('returns download URL for a valid token', async () => {
+      const order = mockOrder();
+      order.status = OrderStatusEnum.PAID;
+      order.downloadToken = 'dl-token-uuid';
+      order.moment = mockMoment() as any;
+      (order.moment as any).imageUrl = 'https://storage.example.com/photo.jpg';
+
+      mockOrderRepo.findOne.mockResolvedValue(order);
+
+      const result = await service.generateDownloadUrlByToken('dl-token-uuid');
+
+      expect(result.downloadUrl).toBe('https://storage.example.com/photo.jpg');
+      expect(result.orderId).toBe('order-uuid-1');
+    });
+
+    it('throws NotFoundException for unknown token', async () => {
+      mockOrderRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.generateDownloadUrlByToken('bad-token')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('throws BadRequestException when order is not PAID', async () => {
+      const order = mockOrder();
+      order.status = OrderStatusEnum.CANCELLED;
+      order.downloadToken = 'dl-token-uuid';
+      mockOrderRepo.findOne.mockResolvedValue(order);
+
+      await expect(service.generateDownloadUrlByToken('dl-token-uuid')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
 });

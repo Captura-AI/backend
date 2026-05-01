@@ -22,6 +22,7 @@ import { PaymentGatewayEnum } from '../enums/payment-gateway.enum';
 import type {
   IBillingInfo,
   ICheckoutResult,
+  IDownloadResult,
   IMidtransWebhookPayload,
   IOrdersResult,
 } from '../interfaces/orders.interface';
@@ -210,6 +211,61 @@ export class OrdersService {
     order.status = OrderStatusEnum.CANCELLED;
 
     return order;
+  }
+
+  public async generateDownloadUrl(id: string, userId: string): Promise<IDownloadResult> {
+    const order = await this.findOrderById(id, userId);
+
+    if (order.status !== OrderStatusEnum.PAID) {
+      throw new BadRequestException('Only PAID orders are eligible for download.');
+    }
+
+    if (!order.downloadToken) {
+      throw new BadRequestException('Download token is not available for this order.');
+    }
+
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const downloadUrl = order.moment?.imageUrl ?? null;
+
+    if (!downloadUrl) {
+      throw new NotFoundException('Original image is not available for download.');
+    }
+
+    return {
+      downloadUrl,
+      expiresAt,
+      momentId: order.momentId,
+      orderId: order.id,
+    };
+  }
+
+  public async generateDownloadUrlByToken(downloadToken: string): Promise<IDownloadResult> {
+    const order = await this._orderRepository.findOne({
+      relations: { moment: true },
+      where: { deletedAt: IsNull(), downloadToken },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Download token is invalid or expired.');
+    }
+
+    if (order.status !== OrderStatusEnum.PAID) {
+      throw new BadRequestException('Order is not in a downloadable state.');
+    }
+
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const downloadUrl = order.moment?.imageUrl ?? null;
+
+    if (!downloadUrl) {
+      throw new NotFoundException('Original image is not available for download.');
+    }
+
+    return {
+      downloadUrl,
+      expiresAt,
+      momentId: order.momentId,
+      orderId: order.id,
+    };
   }
 
   public async processWebhook(payload: IMidtransWebhookPayload): Promise<void> {

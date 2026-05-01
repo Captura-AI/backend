@@ -109,4 +109,8 @@ export class AppConfigurationsService {
     const raw = this._configurationsService.get<string>('app.paymentExpiryMinutes');
     return raw ? parseInt(raw, 10) : 60;
   }
+
+  get aiServiceUrl(): string {
+    return this._configurationsService.get<string>('app.aiServiceUrl') ?? 'http://localhost:8000';
+  }
 }

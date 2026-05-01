@@ -52,4 +52,11 @@ export interface IOrderItem {
   unitPrice: number;
 }
 
+export interface IDownloadResult {
+  downloadUrl: string;
+  expiresAt: number;
+  momentId: string | null;
+  orderId: string;
+}
+
 export type IOrderStatusMap = Record<string, OrderStatusEnum>;
