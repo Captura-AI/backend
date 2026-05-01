@@ -32,6 +32,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -45,6 +46,8 @@ import { IsNull, Repository, type FindOptionsWhere } from 'typeorm';
 
 @Injectable()
 export class OrdersService {
+  private readonly _logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(OrderEntity)
     private readonly _orderRepository: Repository<OrderEntity>,
@@ -156,8 +159,10 @@ export class OrdersService {
       if (savedOrderId) {
         try {
           await this._orderRepository.update(savedOrderId, { status: OrderStatusEnum.FAILED });
-        } catch {
-          // Ignore cleanup failure — the order will remain PENDING and expire naturally.
+        } catch (cleanupErr) {
+          this._logger.warn(
+            `Failed to mark order ${savedOrderId} as FAILED after Midtrans error: ${cleanupErr}`,
+          );
         }
       }
 

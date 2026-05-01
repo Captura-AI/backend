@@ -143,10 +143,11 @@ export class MomentEntity extends AppBaseEntity {
     transformer: {
       from: (v: string | null): number[] | null => {
         if (!v) return null;
-        return v
+        const parsed = v
           .replace(/^\[|\]$/g, '')
           .split(',')
-          .map(Number);
+          .map((s) => Number(s.trim()));
+        return parsed.every(Number.isFinite) ? parsed : null;
       },
       to: (v: number[] | null): string | null => (v ? `[${v.join(',')}]` : null),
     },

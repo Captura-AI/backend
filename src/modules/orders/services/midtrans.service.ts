@@ -14,13 +14,14 @@ import type { IBillingInfo, IMidtransSnapTransaction } from '../interfaces/order
 import { Snap } from 'midtrans-client';
 
 // NestJS Libraries
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 // Services
 import { AppConfigurationsService } from '../../../configurations/app/app-configuration.service';
 
 @Injectable()
 export class MidtransService {
+  private readonly _logger = new Logger(MidtransService.name);
   private readonly _snap: Snap;
 
   constructor(private readonly _config: AppConfigurationsService) {
@@ -88,7 +89,8 @@ export class MidtransService {
       const expected = Buffer.from(expectedHash, 'hex');
       const incoming = Buffer.from(incomingSignature, 'hex');
       return expected.length === incoming.length && timingSafeEqual(expected, incoming);
-    } catch {
+    } catch (err) {
+      this._logger.warn(`Webhook signature verification failed: ${err}`);
       return false;
     }
   }
