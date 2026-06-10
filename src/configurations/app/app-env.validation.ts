@@ -3,6 +3,7 @@ const APP_ENVIRONMENTS = ['development', 'test', 'staging', 'production'] as con
 type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
 
 type AppEnvironmentVariables = {
+  AI_SERVICE_URL?: string;
   API_EXTERNAL_BASE_URL: string;
   APP_CORS_ORIGINS?: string;
   APP_ENV: AppEnvironment;
@@ -151,6 +152,7 @@ export const validateEnvironment = (
   }
 
   const validatedEnvironment: AppEnvironmentVariables = {
+    AI_SERVICE_URL: parseOptionalUrl(environment, 'AI_SERVICE_URL'),
     API_EXTERNAL_BASE_URL: parseOptionalUrl(environment, 'API_EXTERNAL_BASE_URL') ?? '',
     APP_CORS_ORIGINS: environment.APP_CORS_ORIGINS?.trim(),
     APP_ENV: appEnv,

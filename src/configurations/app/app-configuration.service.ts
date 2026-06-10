@@ -14,6 +14,10 @@ export class AppConfigurationsService {
   /**
    * @description Define getter for get app name
    */
+  get aiServiceUrl(): string {
+    return this._configurationsService.get<string>('app.aiServiceUrl') ?? 'http://localhost:8000';
+  }
+
   get appName(): string {
     return this._configurationsService.getOrThrow<string>('app.appName');
   }

@@ -18,6 +18,7 @@ import { AuthenticationModule } from './modules/authentication/authentication.mo
 import { LicenseTypesModule } from './modules/license-types/license-types.module';
 import { MomentsModule } from './modules/moments/moments.module';
 import { PhotographersModule } from './modules/photographers/photographers.module';
+import { PlateModule } from './modules/plate/plate.module';
 import { UsersModule } from './modules/users/users.module';
 
 // NestJS Libraries
@@ -57,6 +58,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     LicenseTypesModule,
     MomentsModule,
     PhotographersModule,
+    PlateModule,
     UsersModule,
   ],
   providers: [

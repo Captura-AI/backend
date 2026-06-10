@@ -1,6 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
 export default registerAs('app', () => ({
+  aiServiceUrl: process.env.AI_SERVICE_URL,
   appName: process.env.APP_NAME,
   appHost: process.env.APP_HOST,
   appEnv: process.env.APP_ENV,
