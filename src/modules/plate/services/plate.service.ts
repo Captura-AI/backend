@@ -3,10 +3,19 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { AppConfigurationsService } from '../../../configurations/app/app-configuration.service';
 import { PlateScanResponseDto } from '../dtos/plate-scan.dto';
 
+interface IAiMotorDetection {
+  motor_type: string;
+  motor_type_confidence: number;
+  color: string | null;
+  color_confidence: number | null;
+  bbox: number[];
+}
+
 interface IAiPlateScanResult {
   uploader_id: string;
   plates: string[];
   confidence: number | null;
+  motors: IAiMotorDetection[];
   saved_result_photo: string | null;
   error: string | null;
 }
@@ -61,6 +70,12 @@ export class PlateService {
       uploaderId,
       plates: scanResult.plates ?? [],
       confidence: scanResult.confidence ?? null,
+      motors: (scanResult.motors ?? []).map((motor) => ({
+        motorType: motor.motor_type,
+        motorTypeConfidence: motor.motor_type_confidence,
+        color: motor.color ?? null,
+        colorConfidence: motor.color_confidence ?? null,
+      })),
       annotatedImage,
       error: scanResult.error ?? null,
     };
