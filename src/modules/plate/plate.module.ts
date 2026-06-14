@@ -6,6 +6,7 @@ import { PlateService } from './services/plate.service';
 
 @Module({
   controllers: [PlateController],
+  exports: [PlateService],
   imports: [AppConfigurationModule],
   providers: [PlateService],
 })

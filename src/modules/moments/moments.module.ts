@@ -6,6 +6,9 @@ import { MomentCollaboratorEntity } from './entities/moment-collaborator.entity'
 import { MomentEntity } from './entities/moments.entity';
 import { MomentLicenseEntity } from './entities/moment-license.entity';
 
+// Modules
+import { PlateModule } from '../plate/plate.module';
+
 // NestJS Libraries
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -18,6 +21,7 @@ import { MomentsService } from './services/moments.service';
   exports: [MomentsService],
   imports: [
     TypeOrmModule.forFeature([MomentCollaboratorEntity, MomentEntity, MomentLicenseEntity]),
+    PlateModule,
   ],
   providers: [MomentsService],
 })

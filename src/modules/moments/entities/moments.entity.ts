@@ -112,6 +112,14 @@ export class MomentEntity extends AppBaseEntity {
   @Column({ name: 'license_plate', type: 'varchar', length: 20, nullable: true })
   public licensePlate!: string | null;
 
+  @ApiProperty({ nullable: true, description: 'AI-detected motorcycle body style, e.g. Sport' })
+  @Column({ name: 'motor_type', type: 'varchar', length: 50, nullable: true })
+  public motorType!: string | null;
+
+  @ApiProperty({ nullable: true, description: 'AI-detected dominant vehicle color' })
+  @Column({ name: 'color', type: 'varchar', length: 50, nullable: true })
+  public color!: string | null;
+
   // ─── Metadata & AI Placeholders ──────────────────────────────────────────────
 
   @ApiProperty({ nullable: true, description: 'Flexible JSONB storage for additional data' })
