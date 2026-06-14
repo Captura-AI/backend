@@ -12,6 +12,15 @@ export class MotorDetectionDto {
 
   @ApiPropertyOptional({ example: 0.88 })
   public colorConfidence!: number | null;
+
+  @ApiPropertyOptional({
+    example: 'B 1234 XYZ',
+    description: 'Plate read from this motorcycle, if any',
+  })
+  public plate!: string | null;
+
+  @ApiPropertyOptional({ example: 0.87 })
+  public plateConfidence!: number | null;
 }
 
 export class PlateScanResponseDto {

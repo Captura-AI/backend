@@ -8,6 +8,8 @@ interface IAiMotorDetection {
   motor_type_confidence: number;
   color: string | null;
   color_confidence: number | null;
+  plate: string | null;
+  plate_confidence: number | null;
   bbox: number[];
 }
 
@@ -75,6 +77,8 @@ export class PlateService {
         motorTypeConfidence: motor.motor_type_confidence,
         color: motor.color ?? null,
         colorConfidence: motor.color_confidence ?? null,
+        plate: motor.plate ?? null,
+        plateConfidence: motor.plate_confidence ?? null,
       })),
       annotatedImage,
       error: scanResult.error ?? null,
