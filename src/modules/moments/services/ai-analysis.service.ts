@@ -31,6 +31,13 @@ interface IAiAnalysisResponse {
   vehicle_type: string | null;
 }
 
+interface ITextEmbeddingResponse {
+  embedding: number[];
+  model: string;
+  query: string;
+  vector_dimension: number;
+}
+
 // Build a scalar-only payload — TypeORM update() cannot handle relation arrays
 type MomentScalarUpdate = {
   aiAnalysis?: Record<string, unknown> | null;
@@ -42,6 +49,9 @@ type MomentScalarUpdate = {
   longitude?: number | null;
   vehicleType?: VehicleTypeEnum | null;
 };
+
+type MomentUpdateCriteria = Parameters<Repository<MomentEntity>['update']>[0];
+type MomentUpdatePayload = Parameters<Repository<MomentEntity>['update']>[1];
 
 const VEHICLE_TYPE_MAP: Record<string, VehicleTypeEnum> = {
   BICYCLE: VehicleTypeEnum.BICYCLE,
@@ -101,8 +111,10 @@ export class AiAnalysisService {
         ...buildAutoFillFields(moment, data),
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await this._momentRepository.update(momentId, updatePayload as any);
+      await this._momentRepository.update(
+        momentId as MomentUpdateCriteria,
+        updatePayload as MomentUpdatePayload,
+      );
 
       this._logger.log(
         `AI analysis complete for moment ${momentId} in ${data.processing_time_ms}ms`,
@@ -142,5 +154,40 @@ export class AiAnalysisService {
     }
 
     return (await response.json()) as IAiAnalysisResponse;
+  }
+
+  public async embedTextQuery(query: string): Promise<number[] | null> {
+    const normalizedQuery = query.trim();
+
+    if (!normalizedQuery) {
+      return null;
+    }
+
+    let response: Response;
+
+    try {
+      response = await fetch(`${this._config.aiServiceUrl}/embed/text`, {
+        body: JSON.stringify({ query: normalizedQuery }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+    } catch (err) {
+      this._logger.warn(`AI text embedding service unreachable: ${err}`);
+      return null;
+    }
+
+    if (!response.ok) {
+      this._logger.warn(`AI text embedding service returned ${response.status}`);
+      return null;
+    }
+
+    const data = (await response.json()) as ITextEmbeddingResponse;
+
+    if (data.vector_dimension !== 512 || data.embedding.length !== 512) {
+      this._logger.warn(`AI text embedding returned invalid dimension ${data.vector_dimension}`);
+      return null;
+    }
+
+    return data.embedding;
   }
 }
