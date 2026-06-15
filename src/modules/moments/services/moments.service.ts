@@ -331,6 +331,89 @@ export class MomentsService {
     }
   }
 
+   * @description Fuzzy "find my vehicle's photos" search. Plates are matched
+   * "close enough" via trigram similarity (real-world OCR is imperfect), with
+   * motor type and color used to boost ranking. When no plate is given, falls
+   * back to filtering by type/color alone.
+   */
+  public async findByVehicle(params: {
+    plate?: string | null;
+    motorType?: string | null;
+    color?: string | null;
+    threshold?: number;
+    limit?: number;
+  }): Promise<Array<MomentEntity & { matchScore: number }>> {
+    const normalizedPlate = this._normalizePlate(params.plate);
+    const motorType = params.motorType?.trim() ? params.motorType.trim() : null;
+    const color = params.color?.trim() ? params.color.trim() : null;
+    const threshold = params.threshold ?? 0.3;
+    const limit = params.limit ?? 20;
+
+    if (!normalizedPlate && !motorType && !color) {
+      return [];
+    }
+
+    // Boost weights: an exact plate match scores 1.0; matching type/color adds
+    // on top so the right vehicle floats up even when the plate is imperfect.
+    const TYPE_BOOST = 0.3;
+    const COLOR_BOOST = 0.2;
+    // Normalized plate expression — must mirror the trigram index in the
+    // AddPlateSearchSupportToMoments migration so the index is usable.
+    const plateExpr = `regexp_replace(upper(coalesce(moments.license_plate, '')), '[^A-Z0-9]', '', 'g')`;
+
+    try {
+      const query = this._momentsRepository.createQueryBuilder('moments');
+      this._addRelations(query);
+      query.where(SOFT_DELETE_FILTER);
+      query.setParameters({ color, motorType });
+
+      if (normalizedPlate) {
+        query.setParameter('plate', normalizedPlate);
+        query.andWhere(`similarity(${plateExpr}, :plate) >= :threshold`, { threshold });
+        query.addSelect(
+          `similarity(${plateExpr}, :plate)
+            + CASE WHEN :motorType::text IS NOT NULL AND upper(moments.motor_type) = upper(:motorType::text) THEN ${TYPE_BOOST} ELSE 0 END
+            + CASE WHEN :color::text IS NOT NULL AND upper(moments.color) = upper(:color::text) THEN ${COLOR_BOOST} ELSE 0 END`,
+          'match_score',
+        );
+        query.orderBy('match_score', 'DESC');
+      } else {
+        // No readable plate — fall back to type/color filtering.
+        if (motorType) {
+          query.andWhere('upper(moments.motor_type) = upper(:motorType::text)');
+        }
+        if (color) {
+          query.andWhere('upper(moments.color) = upper(:color::text)');
+        }
+        query.addSelect('0', 'match_score');
+        query.orderBy(COL_CAPTURED_AT, 'DESC');
+      }
+
+      query.limit(limit);
+
+      const { entities, raw } = await query.getRawAndEntities();
+
+      return entities.map((entity, index) =>
+        Object.assign(entity, {
+          matchScore: Number((raw[index] as { match_score?: number })?.match_score ?? 0),
+        }),
+      );
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { error?: string } };
+      throw new BadRequestException(BAD_REQUEST_MSG, {
+        cause: new Error(),
+        description: err.response?.error ?? err.message,
+      });
+    }
+  }
+
+  private _normalizePlate(plate?: string | null): string | null {
+    if (!plate) {
+      return null;
+    }
+    const normalized = plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return normalized.length > 0 ? normalized : null;
+  }
   public async searchWithMatches(
     filters: SearchMomentDto,
   ): Promise<PaginateDto<IMomentSearchResult>> {

@@ -27,6 +27,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 
 // Services
+import { PlateService } from '../../plate/services/plate.service';
 import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { UsersService } from '../../users/services/users.service';
 
@@ -49,6 +50,7 @@ export class PhotographersService {
     private readonly _photographerProfileRepository: Repository<PhotographerProfileEntity>,
     private readonly _aiAnalysisService: AiAnalysisService,
     private readonly _dataSource: DataSource,
+    private readonly _plateService: PlateService,
     private readonly _usersService: UsersService,
   ) {}
 
@@ -136,6 +138,11 @@ export class PhotographersService {
 
     const slug = this._generateSlug(dto.caption);
 
+    // Auto-tag the moment with AI-detected plate / motor type / color so it
+    // becomes searchable. Run outside the DB transaction (network I/O) and stay
+    // fault-tolerant — the upload must still succeed if the AI service is down.
+    const aiAttributes = imageFile ? await this._extractVehicleAttributes(imageFile) : null;
+
     try {
       return await this._dataSource.transaction(async (manager: EntityManager) => {
         const moment = new MomentEntity();
@@ -144,11 +151,14 @@ export class PhotographersService {
         moment.caption = dto.caption;
         moment.capturedAt = dto.capturedAt ?? null;
         moment.city = dto.city ?? null;
+        moment.color = aiAttributes?.color ?? null;
         moment.district = dto.district ?? null;
         moment.imageUrl = imageFile?.path ?? null;
         moment.latitude = dto.latitude ?? null;
-        moment.licensePlate = dto.licensePlate ?? null;
+        // Prefer a plate the photographer typed; otherwise use the AI reading.
+        moment.licensePlate = dto.licensePlate ?? aiAttributes?.plate ?? null;
         moment.longitude = dto.longitude ?? null;
+        moment.motorType = aiAttributes?.motorType ?? null;
         moment.photographerId = userId;
         moment.photographerProfileId = profile.id;
         moment.slug = slug;
@@ -301,6 +311,28 @@ export class PhotographersService {
       { id: momentId },
       { deletedAt: Math.floor(Date.now() / 1000) },
     );
+  }
+
+  /**
+   * @description Read plate / motor type / color from the uploaded image via the
+   * AI service. Never throws — returns nulls if extraction fails so uploads are
+   * resilient to the AI service being unavailable.
+   */
+  private async _extractVehicleAttributes(
+    imageFile: Express.Multer.File,
+  ): Promise<{ plate: string | null; motorType: string | null; color: string | null }> {
+    try {
+      const extracted = await this._plateService.extract(imageFile);
+      const dominantMotor = extracted.motors[0] ?? null;
+
+      return {
+        color: dominantMotor?.color ?? null,
+        motorType: dominantMotor?.motorType ?? null,
+        plate: extracted.plates[0] ?? null,
+      };
+    } catch {
+      return { color: null, motorType: null, plate: null };
+    }
   }
 
   private _generateSlug(caption: string): string {

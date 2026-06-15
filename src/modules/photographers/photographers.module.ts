@@ -4,6 +4,7 @@ import { MomentLicenseEntity } from '../moments/entities/moment-license.entity';
 import { PhotographerProfileEntity } from './entities/photographer-profile.entity';
 
 // Modules
+import { PlateModule } from '../plate/plate.module';
 import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
 import { UsersModule } from '../users/users.module';
 
@@ -56,6 +57,7 @@ const momentFileFilter = (
       limits: { fileSize: 10 * 1024 * 1024 },
       storage: momentStorage,
     }),
+    PlateModule,
     AppConfigurationModule,
     UsersModule,
   ],

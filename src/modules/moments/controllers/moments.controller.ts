@@ -3,6 +3,7 @@ import { ApiBaseResponse } from '../../../common/decorators/api-base-response.de
 
 // DTOs
 import { ParamIdDto } from '../../../common/dtos/param-id.dto';
+import { SearchByPlateDto } from '../dtos/search-by-plate.dto';
 import { SearchMomentDto } from '../dtos/search-moment.dto';
 
 // Entities
@@ -10,16 +11,34 @@ import { MomentEntity } from '../entities/moments.entity';
 import { MomentLicenseEntity } from '../entities/moment-license.entity';
 
 // NestJS Libraries
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 // Services
 import { MomentsService } from '../services/moments.service';
+import { PlateService } from '../../plate/services/plate.service';
+
+const MOMENTS_RETRIEVED_MESSAGE = 'Moments retrieved successfully';
 
 @Controller('moments')
 @ApiTags('Moments')
 export class MomentsController {
-  constructor(private readonly _momentsService: MomentsService) {}
+  constructor(
+    private readonly _momentsService: MomentsService,
+    private readonly _plateService: PlateService,
+  ) {}
 
   @Post('search')
   @HttpCode(200)
@@ -31,8 +50,79 @@ export class MomentsController {
     const result = await this._momentsService.searchWithMatches(body);
 
     return {
-      message: 'Moments retrieved successfully',
+      message: MOMENTS_RETRIEVED_MESSAGE,
       result,
+    };
+  }
+
+  @Get('search/plate')
+  @ApiOperation({
+    summary: "Find moments by license plate (fuzzy 'close enough' match)",
+    description:
+      'Matches the plate via trigram similarity to tolerate imperfect OCR, optionally boosted/filtered by motor type and color. Returns moments ranked by match score.',
+  })
+  @ApiBaseResponse(MomentEntity)
+  public async searchByPlate(@Query() query: SearchByPlateDto) {
+    const result = await this._momentsService.findByVehicle({
+      color: query.color ?? null,
+      limit: query.limit,
+      motorType: query.motorType ?? null,
+      plate: query.plate ?? null,
+      threshold: query.threshold,
+    });
+
+    return {
+      message: MOMENTS_RETRIEVED_MESSAGE,
+      result,
+    };
+  }
+
+  @Post('search/plate-photo')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Find moments by uploading a photo of the vehicle',
+    description:
+      'Reads the plate + motor type + color from the uploaded photo (AI), then fuzzy-matches moments by plate, ranked/filtered by type and color.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { format: 'binary', type: 'string' } },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  public async searchByPhoto(
+    @Query() query: SearchByPlateDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Image file is required.');
+    }
+
+    const extracted = await this._plateService.extract(file);
+    const detectedPlate = extracted.plates[0] ?? null;
+    const dominantMotor = extracted.motors[0] ?? null;
+
+    const moments = await this._momentsService.findByVehicle({
+      color: dominantMotor?.color ?? null,
+      limit: query.limit,
+      motorType: dominantMotor?.motorType ?? null,
+      plate: detectedPlate,
+      threshold: query.threshold,
+    });
+
+    return {
+      message: MOMENTS_RETRIEVED_MESSAGE,
+      result: {
+        detected: {
+          color: dominantMotor?.color ?? null,
+          motorType: dominantMotor?.motorType ?? null,
+          plate: detectedPlate,
+        },
+        moments,
+      },
     };
   }
 
