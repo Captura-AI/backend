@@ -1,7 +1,9 @@
 // Entities
 import { MomentEntity } from '../moments/entities/moments.entity';
 import { MomentLicenseEntity } from '../moments/entities/moment-license.entity';
+import { PhotographerPackageEntity } from './entities/photographer-package.entity';
 import { PhotographerProfileEntity } from './entities/photographer-profile.entity';
+import { PhotographerReviewEntity } from './entities/photographer-review.entity';
 
 // Modules
 import { PlateModule } from '../plate/plate.module';
@@ -51,7 +53,13 @@ const momentFileFilter = (
   controllers: [PhotographersController],
   exports: [PhotographersService],
   imports: [
-    TypeOrmModule.forFeature([MomentEntity, MomentLicenseEntity, PhotographerProfileEntity]),
+    TypeOrmModule.forFeature([
+      MomentEntity,
+      MomentLicenseEntity,
+      PhotographerPackageEntity,
+      PhotographerProfileEntity,
+      PhotographerReviewEntity,
+    ]),
     MulterModule.register({
       fileFilter: momentFileFilter,
       limits: { fileSize: 10 * 1024 * 1024 },

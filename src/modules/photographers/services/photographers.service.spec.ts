@@ -1,6 +1,7 @@
 // DTOs
 import { CreateMomentDto } from '../../moments/dtos/create-moment.dto';
 import { ListMyMomentsDto } from '../../moments/dtos/list-my-moments.dto';
+import { ListPhotographersDto } from '../dtos/list-photographers.dto';
 import { OnboardPhotographerDto } from '../dtos/onboard-photographer.dto';
 import { UpdateMomentDto } from '../../moments/dtos/update-moment.dto';
 
@@ -38,6 +39,7 @@ const mockProfile = (): PhotographerProfileEntity => {
   profile.id = 'profile-uuid-1';
   profile.userId = 'user-uuid-1';
   profile.artistName = 'Test Artist';
+  profile.slug = 'test-artist';
   profile.bio = null;
   profile.location = null;
   profile.joinedAsPhotographerAt = 1700000000;
@@ -58,10 +60,11 @@ const mockMoment = (): MomentEntity => {
   const moment = new MomentEntity();
   moment.id = 'moment-uuid-1';
   moment.caption = 'A beautiful sunset';
+  moment.capturedAt = 1700000000;
+  moment.city = 'Bandung';
   moment.story = null;
   moment.cameraInfo = null;
-  moment.capturedAt = null;
-  moment.city = null;
+  moment.licensePlate = 'B 1234 ABC';
   moment.deletedAt = null;
   moment.imageUrl = null;
   moment.photographerId = 'user-uuid-1';
@@ -74,10 +77,12 @@ describe('PhotographersService', () => {
   let service: PhotographersService;
   let mockMomentRepo: {
     findAndCount: jest.Mock;
+    find: jest.Mock;
     findOne: jest.Mock;
     update: jest.Mock;
   };
   let mockProfileRepo: {
+    findAndCount: jest.Mock;
     findOne: jest.Mock;
     save: jest.Mock;
   };
@@ -91,11 +96,13 @@ describe('PhotographersService', () => {
   beforeEach(async () => {
     mockMomentRepo = {
       findAndCount: jest.fn(),
+      find: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
     };
 
     mockProfileRepo = {
+      findAndCount: jest.fn(),
       findOne: jest.fn(),
       save: jest.fn(),
     };
@@ -151,7 +158,7 @@ describe('PhotographersService', () => {
       const profile = mockProfile();
       const user = mockUser();
 
-      mockProfileRepo.findOne.mockResolvedValue(null);
+      mockProfileRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
       mockUsersService.findOneById.mockResolvedValue(user);
       mockDataSource.transaction.mockImplementation(async (cb: (manager: unknown) => unknown) => {
         const manager = {
@@ -169,6 +176,9 @@ describe('PhotographersService', () => {
       expect(result).toEqual(profile);
       expect(mockProfileRepo.findOne).toHaveBeenCalledWith({
         where: { userId: 'user-uuid-1' },
+      });
+      expect(mockProfileRepo.findOne).toHaveBeenCalledWith({
+        where: { slug: 'test-artist' },
       });
       expect(mockUsersService.findOneById).toHaveBeenCalledWith('user-uuid-1');
       expect(mockDataSource.transaction).toHaveBeenCalled();
@@ -236,6 +246,58 @@ describe('PhotographersService', () => {
       const result = await service.findByUserId('user-uuid-1');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('findPublicDirectory()', () => {
+    it('returns approved profiles with masked latest moment plates', async () => {
+      const profile = mockProfile();
+      const moment = mockMoment();
+      const dto = new ListPhotographersDto();
+      dto.limit = 12;
+      dto.offset = 1;
+
+      mockProfileRepo.findAndCount.mockResolvedValue([[profile], 1]);
+      mockMomentRepo.find.mockResolvedValue([moment]);
+
+      const result = await service.findPublicDirectory(dto);
+
+      expect(result.total).toBe(1);
+      expect(result.data[0]?.slug).toBe('test-artist');
+      expect(result.data[0]?.latestMoments[0]?.licensePlate).toBe('B ***BC');
+      expect(mockProfileRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relations: { packages: true, reviews: true, user: true },
+          where: expect.objectContaining({ isApproved: true }),
+        }),
+      );
+    });
+  });
+
+  describe('findPublicDetailBySlug()', () => {
+    it('returns profile detail with portfolio and masked public plates', async () => {
+      const profile = mockProfile();
+      const moment = mockMoment();
+
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+      mockMomentRepo.find.mockResolvedValue([moment]);
+
+      const result = await service.findPublicDetailBySlug('test-artist');
+
+      expect(result.slug).toBe('test-artist');
+      expect(result.portfolio[0]?.licensePlate).toBe('B ***BC');
+      expect(result.latestMoments[0]?.licensePlate).toBe('B ***BC');
+      expect(mockProfileRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deletedAt: expect.anything(), isApproved: true, slug: 'test-artist' },
+        }),
+      );
+    });
+
+    it('throws NotFoundException when public slug is missing', async () => {
+      mockProfileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findPublicDetailBySlug('missing')).rejects.toThrow(NotFoundException);
     });
   });
 

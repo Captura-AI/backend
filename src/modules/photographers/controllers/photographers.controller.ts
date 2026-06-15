@@ -4,6 +4,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 
 // DTOs
 import { CreateMomentDto } from '../../moments/dtos/create-moment.dto';
+import { ListPhotographersDto } from '../dtos/list-photographers.dto';
 import { ListMyMomentsDto } from '../../moments/dtos/list-my-moments.dto';
 import { OnboardPhotographerDto } from '../dtos/onboard-photographer.dto';
 import { ParamIdDto } from '../../../common/dtos/param-id.dto';
@@ -44,6 +45,28 @@ const MOMENT_ID_ROUTE = 'moments/:id';
 @ApiTags('Photographers')
 export class PhotographersController {
   constructor(private readonly _photographersService: PhotographersService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List approved public photographer profiles' })
+  public async findPublicDirectory(@Query() query: ListPhotographersDto) {
+    const result = await this._photographersService.findPublicDirectory(query);
+
+    return {
+      message: 'Photographers retrieved successfully',
+      result,
+    };
+  }
+
+  @Get('slug/:slug')
+  @ApiOperation({ summary: 'Get public photographer profile detail by slug' })
+  public async findPublicBySlug(@Param('slug') slug: string) {
+    const result = await this._photographersService.findPublicDetailBySlug(slug);
+
+    return {
+      message: 'Photographer detail retrieved successfully',
+      result,
+    };
+  }
 
   @Post('onboard')
   @HttpCode(200)

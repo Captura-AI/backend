@@ -1,5 +1,6 @@
 // DTOs
 import { CreateMomentDto } from '../../moments/dtos/create-moment.dto';
+import { ListPhotographersDto } from '../dtos/list-photographers.dto';
 import { ListMyMomentsDto } from '../../moments/dtos/list-my-moments.dto';
 import { OnboardPhotographerDto } from '../dtos/onboard-photographer.dto';
 import { UpdateMomentDto } from '../../moments/dtos/update-moment.dto';
@@ -26,6 +27,7 @@ const mockProfile = (): PhotographerProfileEntity => {
   profile.id = 'profile-uuid-1';
   profile.userId = 'user-uuid-1';
   profile.artistName = 'Test Artist';
+  profile.slug = 'test-artist';
   profile.bio = null;
   profile.location = null;
   profile.joinedAsPhotographerAt = 1700000000;
@@ -56,6 +58,8 @@ describe('PhotographersController', () => {
     createMoment: jest.Mock;
     deleteMyMoment: jest.Mock;
     findById: jest.Mock;
+    findPublicDetailBySlug: jest.Mock;
+    findPublicDirectory: jest.Mock;
     findMyMomentById: jest.Mock;
     findMyMoments: jest.Mock;
     onboard: jest.Mock;
@@ -68,6 +72,8 @@ describe('PhotographersController', () => {
       createMoment: jest.fn(),
       deleteMyMoment: jest.fn(),
       findById: jest.fn(),
+      findPublicDetailBySlug: jest.fn(),
+      findPublicDirectory: jest.fn(),
       findMyMomentById: jest.fn(),
       findMyMoments: jest.fn(),
       onboard: jest.fn(),
@@ -122,6 +128,39 @@ describe('PhotographersController', () => {
       expect(mockPhotographersService.findById).toHaveBeenCalledWith('profile-uuid-1');
       expect(response).toEqual({
         message: 'Photographer profile retrieved successfully',
+        result: profile,
+      });
+    });
+  });
+
+  describe('findPublicDirectory()', () => {
+    it('calls service.findPublicDirectory with query, returns result', async () => {
+      const query = new ListPhotographersDto();
+      const result = { data: [], limit: 12, offset: 1, total: 0 };
+
+      mockPhotographersService.findPublicDirectory.mockResolvedValue(result);
+
+      const response = await controller.findPublicDirectory(query);
+
+      expect(mockPhotographersService.findPublicDirectory).toHaveBeenCalledWith(query);
+      expect(response).toEqual({
+        message: 'Photographers retrieved successfully',
+        result,
+      });
+    });
+  });
+
+  describe('findPublicBySlug()', () => {
+    it('calls service.findPublicDetailBySlug with slug, returns result', async () => {
+      const profile = mockProfile();
+
+      mockPhotographersService.findPublicDetailBySlug.mockResolvedValue(profile);
+
+      const response = await controller.findPublicBySlug('test-artist');
+
+      expect(mockPhotographersService.findPublicDetailBySlug).toHaveBeenCalledWith('test-artist');
+      expect(response).toEqual({
+        message: 'Photographer detail retrieved successfully',
         result: profile,
       });
     });
