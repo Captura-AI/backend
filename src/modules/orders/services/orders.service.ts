@@ -194,12 +194,36 @@ export class OrdersService {
 
     const [data, total] = await this._orderRepository.findAndCount({
       order: { createdAt: 'DESC' },
+      relations: { license: { licenseType: true }, moment: { photographerProfile: true } },
       skip: dto.skip,
       take: limit,
       where,
     });
 
-    return { data, limit, offset, total };
+    const sanitized = data.map((order) => this._withoutMomentPlate(order));
+
+    return { data: sanitized, limit, offset, total };
+  }
+
+  /**
+   * Returns an order copy whose nested moment never carries the full plate. The
+   * library list does not need plate data, so we strip it for defense in depth
+   * (public/owner surfaces must never receive the full plate — requirements §4.3).
+   */
+  private _withoutMomentPlate(order: OrderEntity): OrderEntity {
+    if (!order.moment) {
+      return order;
+    }
+
+    const safeMoment = Object.assign(
+      Object.create(Object.getPrototypeOf(order.moment)),
+      order.moment,
+      { licensePlate: null },
+    );
+
+    return Object.assign(Object.create(Object.getPrototypeOf(order)), order, {
+      moment: safeMoment,
+    });
   }
 
   public async findOrderById(id: string, userId: string): Promise<OrderEntity> {
