@@ -82,3 +82,23 @@ Creates: Controller, Service, Entity, DTOs, Interfaces — following the establi
 - Private class properties use underscore prefix: `_propertyName`
 - Keep variable/function/import names alphabetically ordered within their block
 - Before adding a dependency, evaluate: update frequency, community size, open issues, bundle impact
+
+### Clean Code Standard (MANDATORY)
+
+All code must be clean, optimized, and consistent with current best practices. Primary references:
+
+1. Clean Code JavaScript — https://github.com/ryanmcdermott/clean-code-javascript
+2. Node.js Best Practices — https://github.com/goldbergyoni/nodebestpractices
+3. NestJS docs — https://docs.nestjs.com
+
+Non-negotiable rules:
+
+- **Vertical spacing for readability:** separate logical blocks with blank lines. Add a blank line **before** `if`/`for`/`return`/`switch` and other control blocks when it separates them from the statement above. Never stack statements with no breathing room.
+- **Guard clauses / early return:** avoid nesting beyond 2–3 levels; return early instead of nested `else`.
+- **Descriptive names:** no ambiguous abbreviations; booleans start with `is/has/should/can`.
+- **Small, single-responsibility functions** (< 50 lines); split when larger.
+- **Strict TypeScript:** no `any` in application code — use `unknown` then narrow; use advanced types (discriminated unions, generics, utility types) where they clarify contracts.
+- **Immutability:** never mutate arguments/objects; return new copies.
+- **Explicit error handling:** never swallow errors; include context; use typed/HTTP exceptions.
+- **Never fight the formatter:** follow Prettier/ESLint. Run `npm run lint:fix` + `npm run format`; `lint`, build, and tests must be green before any PR (lint-staged enforces on commit).
+- **Match existing patterns** (DDD modules, repository/Data Mapper) rather than introducing new styles.
