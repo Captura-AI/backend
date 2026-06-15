@@ -331,6 +331,7 @@ export class MomentsService {
     }
   }
 
+  /**
    * @description Fuzzy "find my vehicle's photos" search. Plates are matched
    * "close enough" via trigram similarity (real-world OCR is imperfect), with
    * motor type and color used to boost ranking. When no plate is given, falls

@@ -26,6 +26,7 @@ import { Test } from '@nestjs/testing';
 
 // Services
 import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
+import { PlateService } from '../../plate/services/plate.service';
 import { PhotographersService } from './photographers.service';
 import { UsersService } from '../../users/services/users.service';
 
@@ -129,6 +130,10 @@ describe('PhotographersService', () => {
         {
           provide: AiAnalysisService,
           useValue: { analyzeMoment: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: PlateService,
+          useValue: { searchByPlate: jest.fn() },
         },
       ],
     }).compile();
