@@ -100,6 +100,9 @@ export class PhotographersController {
   ) {
     const result = await this._photographersService.createMoment(user.id, body, imageFile);
 
+    // Trigger AI analysis asynchronously — does not block the response
+    this._photographersService.triggerAiAnalysis(result.id, result.imageUrl);
+
     return {
       message: 'Moment uploaded successfully',
       result,

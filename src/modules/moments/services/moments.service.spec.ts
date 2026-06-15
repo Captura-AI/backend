@@ -340,7 +340,6 @@ describe('MomentsService', () => {
 
       const license = new MomentLicenseEntity();
       license.id = 'license-uuid';
-      license.name = 'Editorial';
       license.price = 29.99;
       license.isActive = true;
 
@@ -353,7 +352,7 @@ describe('MomentsService', () => {
         order: { price: 'ASC' },
       });
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('Editorial');
+      expect(result[0].id).toBe('license-uuid');
     });
 
     it('returns empty array when no active licenses exist', async () => {

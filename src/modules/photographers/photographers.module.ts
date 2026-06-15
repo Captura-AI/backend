@@ -4,7 +4,11 @@ import { MomentLicenseEntity } from '../moments/entities/moment-license.entity';
 import { PhotographerProfileEntity } from './entities/photographer-profile.entity';
 
 // Modules
+import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
 import { UsersModule } from '../users/users.module';
+
+// Services
+import { AiAnalysisService } from '../moments/services/ai-analysis.service';
 
 // Multer
 import type { Request } from 'express';
@@ -52,8 +56,9 @@ const momentFileFilter = (
       limits: { fileSize: 10 * 1024 * 1024 },
       storage: momentStorage,
     }),
+    AppConfigurationModule,
     UsersModule,
   ],
-  providers: [PhotographersService],
+  providers: [AiAnalysisService, PhotographersService],
 })
 export class PhotographersModule {}

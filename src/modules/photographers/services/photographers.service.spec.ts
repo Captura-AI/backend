@@ -25,6 +25,7 @@ import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 
 // Services
+import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { PhotographersService } from './photographers.service';
 import { UsersService } from '../../users/services/users.service';
 
@@ -124,6 +125,10 @@ describe('PhotographersService', () => {
         {
           provide: DataSource,
           useValue: mockDataSource,
+        },
+        {
+          provide: AiAnalysisService,
+          useValue: { analyzeMoment: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

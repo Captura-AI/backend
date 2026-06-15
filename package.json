@@ -52,6 +52,7 @@
     "class-validator": "0.15.1",
     "compression": "1.8.1",
     "ioredis": "5.10.1",
+    "midtrans-client": "^1.4.3",
     "nestjs-pino": "4.6.1",
     "nodemailer": "^8.0.7",
     "passport": "0.7.0",
