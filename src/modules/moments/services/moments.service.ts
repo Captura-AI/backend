@@ -15,7 +15,12 @@ import { MomentLicenseEntity } from '../entities/moment-license.entity';
 import { QuerySortingHelper } from '../../../common/helpers/query-sorting.helper';
 
 // Interfaces
-import type { IMomentFacets, IPhotographerSummary } from '../interfaces/moments.interface';
+import type {
+  IMomentFacets,
+  IMomentSearchMatch,
+  IMomentSearchResult,
+  IPhotographerSummary,
+} from '../interfaces/moments.interface';
 
 // NestJS Libraries
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -24,8 +29,110 @@ import { InjectRepository } from '@nestjs/typeorm';
 // TypeORM
 import { Repository, SelectQueryBuilder } from 'typeorm';
 
+// Services
+import { AiAnalysisService } from './ai-analysis.service';
+
 const SOFT_DELETE_FILTER = 'moments.deleted_at IS NULL';
 const COL_CAPTURED_AT = 'moments.captured_at';
+const NORMALIZED_PLATE_SQL = `regexp_replace(upper(moments.license_plate), '[^A-Z0-9]', '', 'g')`;
+
+function normalizePlate(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function vectorLiteral(vector: number[]): string {
+  return `[${vector.join(',')}]`;
+}
+
+function maskPlate(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+
+  if (normalized.length <= 4) {
+    return `${normalized.slice(0, 1)}***`;
+  }
+
+  return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
+}
+
+function maskPublicMoment(moment: MomentEntity): MomentEntity {
+  return Object.assign(Object.create(Object.getPrototypeOf(moment)) as MomentEntity, moment, {
+    licensePlate: maskPlate(moment.licensePlate),
+  });
+}
+
+function scoreTextMatch(moment: MomentEntity, query?: string): number {
+  if (!query) {
+    return 0;
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  const searchableValues = [
+    moment.caption,
+    moment.description,
+    moment.city,
+    moment.district,
+    ...(moment.tags ?? []),
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.toLowerCase());
+
+  return searchableValues.some((value) => value.includes(normalizedQuery)) ? 0.68 : 0.42;
+}
+
+function scorePlateMatch(moment: MomentEntity, licensePlate?: string): number {
+  if (!licensePlate || !moment.licensePlate) {
+    return 0;
+  }
+
+  const queryPlate = normalizePlate(licensePlate);
+  const momentPlate = normalizePlate(moment.licensePlate);
+
+  if (!queryPlate || !momentPlate) {
+    return 0;
+  }
+
+  if (momentPlate === queryPlate) {
+    return 1;
+  }
+
+  return momentPlate.includes(queryPlate) || queryPlate.includes(momentPlate) ? 0.86 : 0;
+}
+
+function buildMatch(moment: MomentEntity, filters: SearchMomentDto): IMomentSearchMatch {
+  const plateScore = scorePlateMatch(moment, filters.licensePlate);
+  const textScore = scoreTextMatch(moment, filters.query);
+  const semanticScore = filters.query && moment.embeddingVector ? 0.74 : 0;
+  const score = Math.max(plateScore, semanticScore, textScore, 0.25);
+
+  if (plateScore > 0) {
+    return {
+      isPlateMatch: true,
+      isSemanticMatch: false,
+      label: plateScore === 1 ? 'plate-exact' : 'plate-partial',
+      score,
+    };
+  }
+
+  if (semanticScore > 0) {
+    return {
+      isPlateMatch: false,
+      isSemanticMatch: true,
+      label: 'semantic',
+      score,
+    };
+  }
+
+  return {
+    isPlateMatch: false,
+    isSemanticMatch: false,
+    label: textScore > 0 ? 'text' : 'recent',
+    score,
+  };
+}
 
 @Injectable()
 export class MomentsService {
@@ -34,6 +141,7 @@ export class MomentsService {
     private readonly _momentsRepository: Repository<MomentEntity>,
     @InjectRepository(MomentLicenseEntity)
     private readonly _momentLicensesRepository: Repository<MomentLicenseEntity>,
+    private readonly _aiAnalysisService: AiAnalysisService,
   ) {}
 
   private _addRelations(query: SelectQueryBuilder<MomentEntity>): void {
@@ -53,7 +161,6 @@ export class MomentsService {
   }
 
   private _searchData(filters: SearchMomentDto, query: SelectQueryBuilder<MomentEntity>): void {
-    // TODO Phase 2: if query is provided, call gRPC embedding service before searching
     query.andWhere(
       `(
         moments.caption ILIKE :searchQuery OR
@@ -63,6 +170,37 @@ export class MomentsService {
       )`,
       { searchQuery: `%${filters.query}%` },
     );
+  }
+
+  private _applyPlateFilter(licensePlate: string, query: SelectQueryBuilder<MomentEntity>): void {
+    const normalizedPlate = normalizePlate(licensePlate);
+
+    if (!normalizedPlate) {
+      return;
+    }
+
+    query.andWhere(`${NORMALIZED_PLATE_SQL} LIKE :plate`, {
+      plate: `%${normalizedPlate}%`,
+    });
+  }
+
+  private async _getQueryEmbedding(filters: SearchMomentDto): Promise<number[] | null> {
+    if (!filters.query) {
+      return null;
+    }
+
+    return this._aiAnalysisService.embedTextQuery(filters.query);
+  }
+
+  private _applySemanticOrdering(
+    embedding: number[],
+    query: SelectQueryBuilder<MomentEntity>,
+  ): void {
+    query
+      .addSelect('moments.embedding_vector <=> :queryEmbedding::vector', 'semantic_distance')
+      .andWhere('moments.embedding_vector IS NOT NULL')
+      .orderBy('semantic_distance', 'ASC')
+      .setParameter('queryEmbedding', vectorLiteral(embedding));
   }
 
   private _sortData(filters: SearchMomentDto, query: SelectQueryBuilder<MomentEntity>): void {
@@ -101,11 +239,17 @@ export class MomentsService {
     query: SelectQueryBuilder<MomentEntity>,
   ): Promise<IResultFilter<MomentEntity>> {
     try {
+      const queryEmbedding = await this._getQueryEmbedding(filters);
+
       this._addRelations(query);
 
       query.andWhere(SOFT_DELETE_FILTER);
 
-      if (filters.query) {
+      if (queryEmbedding) {
+        this._applySemanticOrdering(queryEmbedding, query);
+      }
+
+      if (filters.query && !queryEmbedding) {
         this._searchData(filters, query);
       }
 
@@ -140,14 +284,12 @@ export class MomentsService {
       }
 
       if (filters.licensePlate) {
-        query.andWhere('moments.license_plate ILIKE :plate', {
-          plate: `%${filters.licensePlate}%`,
-        });
+        this._applyPlateFilter(filters.licensePlate, query);
       }
 
-      if (filters.sortBy?.length) {
+      if (!queryEmbedding && filters.sortBy?.length) {
         this._sortData(filters, query);
-      } else {
+      } else if (!queryEmbedding) {
         query.orderBy(COL_CAPTURED_AT, 'DESC');
       }
 
@@ -171,6 +313,7 @@ export class MomentsService {
     try {
       const query = this._momentsRepository.createQueryBuilder('moments');
       const { data, total, totalData } = await this._filterData(filters, query);
+      const maskedData = data.map(maskPublicMoment);
       const meta = new PageMetaDto({
         page: filters.offset ?? 1,
         size: filters.limit ?? 10,
@@ -178,7 +321,7 @@ export class MomentsService {
         totalData,
       });
 
-      return new PaginateDto<MomentEntity>(data, meta);
+      return new PaginateDto<MomentEntity>(maskedData, meta);
     } catch (error: unknown) {
       const err = error as { message?: string; response?: { error?: string } };
       throw new BadRequestException(BAD_REQUEST_MSG, {
@@ -188,7 +331,6 @@ export class MomentsService {
     }
   }
 
-  /**
    * @description Fuzzy "find my vehicle's photos" search. Plates are matched
    * "close enough" via trigram similarity (real-world OCR is imperfect), with
    * motor type and color used to boost ranking. When no plate is given, falls
@@ -272,6 +414,24 @@ export class MomentsService {
     const normalized = plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
     return normalized.length > 0 ? normalized : null;
   }
+  public async searchWithMatches(
+    filters: SearchMomentDto,
+  ): Promise<PaginateDto<IMomentSearchResult>> {
+    const query = this._momentsRepository.createQueryBuilder('moments');
+    const { data, total, totalData } = await this._filterData(filters, query);
+    const meta = new PageMetaDto({
+      page: filters.offset ?? 1,
+      size: filters.limit ?? 10,
+      total,
+      totalData,
+    });
+    const content = data.map((moment) => ({
+      match: buildMatch(moment, filters),
+      moment: maskPublicMoment(moment),
+    }));
+
+    return new PaginateDto<IMomentSearchResult>(content, meta);
+  }
 
   public async findOneById(
     id: string,
@@ -307,13 +467,13 @@ export class MomentsService {
       };
     }
 
-    return Object.assign(moment, { photographerSummary });
+    return Object.assign(maskPublicMoment(moment), { photographerSummary });
   }
 
   public async findSimilar(momentId: string, limit = 10): Promise<MomentEntity[]> {
     const source = await this._momentsRepository.findOne({
       where: { id: momentId, deletedAt: undefined },
-      select: ['id', 'city', 'vehicleType'],
+      select: ['id', 'city', 'embeddingVector', 'vehicleType'],
     });
 
     if (!source) {
@@ -327,7 +487,18 @@ export class MomentsService {
 
     this._addRelations(query);
 
-    // Phase 1: match by same city or same vehicle type
+    if (source.embeddingVector?.length === 512) {
+      const similarMoments = await query
+        .addSelect('moments.embedding_vector <=> :sourceEmbedding::vector', 'semantic_distance')
+        .andWhere('moments.embedding_vector IS NOT NULL')
+        .orderBy('semantic_distance', 'ASC')
+        .setParameter('sourceEmbedding', vectorLiteral(source.embeddingVector))
+        .take(limit)
+        .getMany();
+
+      return similarMoments.map(maskPublicMoment);
+    }
+
     const conditions: string[] = [];
     const params: Record<string, unknown> = {};
 
@@ -345,7 +516,9 @@ export class MomentsService {
       query.andWhere(`(${conditions.join(' OR ')})`, params);
     }
 
-    return query.orderBy(COL_CAPTURED_AT, 'DESC').take(limit).getMany();
+    const similarMoments = await query.orderBy(COL_CAPTURED_AT, 'DESC').take(limit).getMany();
+
+    return similarMoments.map(maskPublicMoment);
   }
 
   public async findLicensesByMomentId(momentId: string): Promise<MomentLicenseEntity[]> {
@@ -365,13 +538,15 @@ export class MomentsService {
 
   public async findRecent(limit = 10): Promise<MomentEntity[]> {
     try {
-      return await this._momentsRepository
+      const moments = await this._momentsRepository
         .createQueryBuilder('moments')
         .where(SOFT_DELETE_FILTER)
         .orderBy(COL_CAPTURED_AT, 'DESC')
         .take(limit)
         .cache(true)
         .getMany();
+
+      return moments.map(maskPublicMoment);
     } catch (error: unknown) {
       const err = error as { message?: string; response?: { error?: string } };
       throw new BadRequestException(BAD_REQUEST_MSG, {

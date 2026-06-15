@@ -86,4 +86,38 @@ export class AppConfigurationsService {
   get throttleLimit(): number {
     return this._configurationsService.getOrThrow<number>('app.throttleLimit');
   }
+
+  get midtransServerKey(): string {
+    return this._configurationsService.getOrThrow<string>('app.midtransServerKey');
+  }
+
+  get midtransClientKey(): string {
+    return this._configurationsService.getOrThrow<string>('app.midtransClientKey');
+  }
+
+  get midtransIsProduction(): boolean {
+    return this._configurationsService.get<string>('app.midtransIsProduction') === 'true';
+  }
+
+  get serviceFeeRate(): number {
+    const raw = this._configurationsService.get<string>('app.serviceFeeRate');
+    const parsed = raw ? parseFloat(raw) : 0.05;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.05;
+  }
+
+  get taxRate(): number {
+    const raw = this._configurationsService.get<string>('app.taxRate');
+    const parsed = raw ? parseFloat(raw) : 0.11;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.11;
+  }
+
+  get paymentExpiryMinutes(): number {
+    const raw = this._configurationsService.get<string>('app.paymentExpiryMinutes');
+    const parsed = raw ? parseInt(raw, 10) : 60;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 60;
+  }
+
+  get aiServiceUrl(): string {
+    return this._configurationsService.get<string>('app.aiServiceUrl') ?? 'http://localhost:8000';
+  }
 }

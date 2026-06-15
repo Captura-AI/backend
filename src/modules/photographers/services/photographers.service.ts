@@ -28,6 +28,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 
 // Services
 import { PlateService } from '../../plate/services/plate.service';
+import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { UsersService } from '../../users/services/users.service';
 
 // TypeORM
@@ -47,6 +48,7 @@ export class PhotographersService {
     private readonly _momentRepository: Repository<MomentEntity>,
     @InjectRepository(PhotographerProfileEntity)
     private readonly _photographerProfileRepository: Repository<PhotographerProfileEntity>,
+    private readonly _aiAnalysisService: AiAnalysisService,
     private readonly _dataSource: DataSource,
     private readonly _plateService: PlateService,
     private readonly _usersService: UsersService,
@@ -195,6 +197,14 @@ export class PhotographersService {
         description: err.response?.error ?? err.message,
       });
     }
+  }
+
+  /**
+   * @description Trigger AI analysis for a moment — fire-and-forget, does not block the response
+   */
+  public triggerAiAnalysis(momentId: string, imageUrl: string | null): void {
+    if (!imageUrl) return;
+    void this._aiAnalysisService.analyzeMoment(momentId, imageUrl);
   }
 
   /**

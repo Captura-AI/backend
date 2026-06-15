@@ -27,6 +27,7 @@ import { AppConfigurationsService } from './app-configuration.service';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      envFilePath: ['.env', 'backend/.env'],
       load: [
         appConfiguration,
         appleConfiguration,

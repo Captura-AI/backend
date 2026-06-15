@@ -20,12 +20,15 @@ import { AuthenticationJWTGuard } from '../../../common/guards/authentication-jw
 import { AuthenticationLocalGuard } from '../../../common/guards/authentication-local.guard';
 
 // NestJS Libraries
-import { Body, Controller, Get, HttpCode, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 
 // Services
+import { AppleConfigService } from '../../../configurations/apple/apple-configuration.service';
 import { AuthenticationService } from '../services/authentication.service';
+import { GoogleConfigService } from '../../../configurations/google/google-configuration.service';
 import { UsersService } from '../../users/services/users.service';
 
 @Controller('authentication')
@@ -33,6 +36,8 @@ import { UsersService } from '../../users/services/users.service';
 export class AuthenticationController {
   constructor(
     private readonly _authenticationService: AuthenticationService,
+    private readonly _appleConfigService: AppleConfigService,
+    private readonly _googleConfigService: GoogleConfigService,
     private readonly _usersService: UsersService,
   ) {}
 
@@ -61,6 +66,41 @@ export class AuthenticationController {
     return {
       message: 'User registered successfully',
       result,
+    };
+  }
+
+  @Get('oauth/providers')
+  @ApiOperation({ summary: 'Get OAuth provider availability' })
+  public getOAuthProviders() {
+    const googleAvailable = Boolean(
+      this._googleConfigService.googleClientId &&
+      this._googleConfigService.googleClientSecret &&
+      this._googleConfigService.googleCallbackUrl,
+    );
+    const appleAvailable = Boolean(
+      this._appleConfigService.appleClientId &&
+      this._appleConfigService.appleTeamId &&
+      this._appleConfigService.appleKeyId &&
+      this._appleConfigService.applePrivateKey &&
+      this._appleConfigService.appleCallbackUrl,
+    );
+
+    return {
+      message: 'OAuth provider availability retrieved successfully',
+      result: {
+        apple: {
+          available: appleAvailable,
+          message: appleAvailable
+            ? 'Apple sign in is available.'
+            : 'Apple sign in is not configured on this server.',
+        },
+        google: {
+          available: googleAvailable,
+          message: googleAvailable
+            ? 'Google sign in is available.'
+            : 'Google sign in is not configured on this server. Please restart the backend after setting Google OAuth env values.',
+        },
+      },
     };
   }
 
@@ -162,13 +202,22 @@ export class AuthenticationController {
   @UseGuards(AuthenticationGoogleGuard)
   @ApiOperation({ summary: 'Google OAuth2 callback — returns JWT tokens' })
   @ApiBaseResponse(LoginWithAccessToken)
-  public async googleCallback(@Req() req: ICustomRequestHeaders & { user: UsersEntity }) {
+  public async googleCallback(
+    @Req() req: ICustomRequestHeaders & { user: UsersEntity },
+    @Res() response: Response,
+  ) {
     const result = await this._authenticationService.loginWithSso(req.user);
+    const redirectUrl = new URL(
+      process.env.AUTH_SUCCESS_REDIRECT_URL ?? 'http://localhost:3000/auth/oauth/callback',
+    );
 
-    return {
-      message: 'Google login successful',
-      result,
-    };
+    redirectUrl.hash = new URLSearchParams({
+      accessToken: result.accessToken,
+      provider: 'google',
+      refreshToken: result.refreshToken,
+    }).toString();
+
+    return response.redirect(redirectUrl.toString());
   }
 
   // ─── Apple Sign In ─────────────────────────────────────────────────────────

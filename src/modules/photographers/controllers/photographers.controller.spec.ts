@@ -59,6 +59,7 @@ describe('PhotographersController', () => {
     findMyMomentById: jest.Mock;
     findMyMoments: jest.Mock;
     onboard: jest.Mock;
+    triggerAiAnalysis: jest.Mock;
     updateMyMoment: jest.Mock;
   };
 
@@ -70,6 +71,7 @@ describe('PhotographersController', () => {
       findMyMomentById: jest.fn(),
       findMyMoments: jest.fn(),
       onboard: jest.fn(),
+      triggerAiAnalysis: jest.fn(),
       updateMyMoment: jest.fn(),
     };
 

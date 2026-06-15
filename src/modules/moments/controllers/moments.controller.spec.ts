@@ -117,7 +117,6 @@ describe('MomentsController', () => {
   describe('findLicenses()', () => {
     it('returns licenses for a moment', async () => {
       const license = new MomentLicenseEntity();
-      license.name = 'Editorial';
       license.price = 29.99;
 
       mockMomentsService.findLicensesByMomentId.mockResolvedValue([license]);

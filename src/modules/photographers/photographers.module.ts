@@ -5,7 +5,11 @@ import { PhotographerProfileEntity } from './entities/photographer-profile.entit
 
 // Modules
 import { PlateModule } from '../plate/plate.module';
+import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
 import { UsersModule } from '../users/users.module';
+
+// Services
+import { AiAnalysisService } from '../moments/services/ai-analysis.service';
 
 // Multer
 import type { Request } from 'express';
@@ -54,8 +58,9 @@ const momentFileFilter = (
       storage: momentStorage,
     }),
     PlateModule,
+    AppConfigurationModule,
     UsersModule,
   ],
-  providers: [PhotographersService],
+  providers: [AiAnalysisService, PhotographersService],
 })
 export class PhotographersModule {}

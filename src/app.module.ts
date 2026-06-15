@@ -17,6 +17,7 @@ import { AppLoggerModule } from './configurations/logger/logger.module';
 import { AuthenticationModule } from './modules/authentication/authentication.module';
 import { LicenseTypesModule } from './modules/license-types/license-types.module';
 import { MomentsModule } from './modules/moments/moments.module';
+import { OrdersModule } from './modules/orders/orders.module';
 import { PhotographersModule } from './modules/photographers/photographers.module';
 import { PlateModule } from './modules/plate/plate.module';
 import { UsersModule } from './modules/users/users.module';
@@ -57,6 +58,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     AuthenticationModule,
     LicenseTypesModule,
     MomentsModule,
+    OrdersModule,
     PhotographersModule,
     PlateModule,
     UsersModule,

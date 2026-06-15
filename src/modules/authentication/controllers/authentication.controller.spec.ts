@@ -18,6 +18,8 @@ import { REDIS_CLIENT } from '../../../database/redis/redis-provider.module';
 
 // Services
 import { AuthenticationService } from '../services/authentication.service';
+import { AppleConfigService } from '../../../configurations/apple/apple-configuration.service';
+import { GoogleConfigService } from '../../../configurations/google/google-configuration.service';
 import { JwtConfigService } from '../../../configurations/jwt/jwt-configuration.service';
 import { MagicLinkService } from '../services/magic-link.service';
 import { OtpService } from '../services/otp.service';
@@ -72,6 +74,24 @@ describe('AuthenticationController', () => {
         JwtConfigService,
         { provide: REDIS_CLIENT, useValue: mockRedis },
         {
+          provide: AppleConfigService,
+          useValue: {
+            appleCallbackUrl: '',
+            appleClientId: '',
+            appleKeyId: '',
+            applePrivateKey: '',
+            appleTeamId: '',
+          },
+        },
+        {
+          provide: GoogleConfigService,
+          useValue: {
+            googleCallbackUrl: 'http://localhost:1337/api/authentication/google/callback',
+            googleClientId: 'google-client-id',
+            googleClientSecret: 'google-client-secret',
+          },
+        },
+        {
           provide: MagicLinkService,
           useValue: {
             generateAndSend: jest.fn().mockResolvedValue(undefined),
@@ -110,6 +130,17 @@ describe('AuthenticationController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('[GET] /authentication/oauth/providers', () => {
+    it('returns OAuth provider availability without exposing secrets', () => {
+      const response = controller.getOAuthProviders();
+
+      expect(response.message).toBe('OAuth provider availability retrieved successfully');
+      expect(response.result.google.available).toBe(true);
+      expect(response.result.apple.available).toBe(false);
+      expect(JSON.stringify(response)).not.toContain('google-client-secret');
+    });
   });
 
   describe('[POST] /authentication/login', () => {

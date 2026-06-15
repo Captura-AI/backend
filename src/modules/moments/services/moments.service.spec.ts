@@ -16,6 +16,7 @@ import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 
 // Services
+import { AiAnalysisService } from './ai-analysis.service';
 import { MomentsService } from './moments.service';
 
 const buildMockQueryBuilder = (data: MomentEntity[], total: number) => {
@@ -32,6 +33,7 @@ const buildMockQueryBuilder = (data: MomentEntity[], total: number) => {
     limit: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     select: jest.fn().mockReturnThis(),
+    setParameter: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
@@ -63,6 +65,9 @@ describe('MomentsService', () => {
   let mockLicensesRepository: {
     find: jest.Mock;
   };
+  let mockAiAnalysisService: {
+    embedTextQuery: jest.Mock;
+  };
 
   beforeEach(async () => {
     mockMomentsRepository = {
@@ -76,6 +81,10 @@ describe('MomentsService', () => {
       find: jest.fn(),
     };
 
+    mockAiAnalysisService = {
+      embedTextQuery: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MomentsService,
@@ -86,6 +95,10 @@ describe('MomentsService', () => {
         {
           provide: getRepositoryToken(MomentLicenseEntity),
           useValue: mockLicensesRepository,
+        },
+        {
+          provide: AiAnalysisService,
+          useValue: mockAiAnalysisService,
         },
       ],
     }).compile();
@@ -149,7 +162,7 @@ describe('MomentsService', () => {
       });
     });
 
-    it('applies licensePlate partial match filter', async () => {
+    it('applies normalized licensePlate partial match filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
       mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
@@ -158,9 +171,12 @@ describe('MomentsService', () => {
 
       await service.search(filters);
 
-      expect(qb.andWhere).toHaveBeenCalledWith('moments.license_plate ILIKE :plate', {
-        plate: '%B 1234%',
-      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        "regexp_replace(upper(moments.license_plate), '[^A-Z0-9]', '', 'g') LIKE :plate",
+        {
+          plate: '%B1234%',
+        },
+      );
     });
 
     it('applies timeRange from/to filter', async () => {
@@ -212,6 +228,27 @@ describe('MomentsService', () => {
       );
       expect(queryCall).toBeDefined();
       expect(queryCall[1]).toEqual({ searchQuery: '%sunset%' });
+    });
+
+    it('uses semantic vector ordering when text embedding is available', async () => {
+      const qb = buildMockQueryBuilder([mockMoment()], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+      mockAiAnalysisService.embedTextQuery.mockResolvedValue([0.1].concat(Array(511).fill(0.2)));
+
+      const filters = new SearchMomentDto();
+      filters.query = 'black motorcycle';
+
+      await service.search(filters);
+
+      expect(qb.addSelect).toHaveBeenCalledWith(
+        'moments.embedding_vector <=> :queryEmbedding::vector',
+        'semantic_distance',
+      );
+      expect(qb.setParameter).toHaveBeenCalledWith(
+        'queryEmbedding',
+        expect.stringMatching(/^\[0\.1,0\.2/),
+      );
+      expect(qb.orderBy).toHaveBeenCalledWith('semantic_distance', 'ASC');
     });
 
     it('returns empty paginated result when no moments match', async () => {
@@ -299,7 +336,7 @@ describe('MomentsService', () => {
 
       expect(mockMomentsRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'test-uuid-1234', deletedAt: undefined },
-        select: ['id', 'city', 'vehicleType'],
+        select: ['id', 'city', 'embeddingVector', 'vehicleType'],
       });
       expect(qb.andWhere).toHaveBeenCalledWith('moments.id != :momentId', {
         momentId: 'test-uuid-1234',
@@ -340,7 +377,6 @@ describe('MomentsService', () => {
 
       const license = new MomentLicenseEntity();
       license.id = 'license-uuid';
-      license.name = 'Editorial';
       license.price = 29.99;
       license.isActive = true;
 
@@ -353,7 +389,7 @@ describe('MomentsService', () => {
         order: { price: 'ASC' },
       });
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('Editorial');
+      expect(result[0].id).toBe('license-uuid');
     });
 
     it('returns empty array when no active licenses exist', async () => {
