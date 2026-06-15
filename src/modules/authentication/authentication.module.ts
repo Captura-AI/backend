@@ -37,7 +37,7 @@ import { JwtStrategy } from '../../common/strategies/jwt.strategy';
 import { LocalStrategy } from '../../common/strategies/local.strategy';
 
 const ssoProviders: Provider[] = [
-  ...(process.env.GOOGLE_CLIENT_ID ? [GoogleStrategy] : []),
+  GoogleStrategy,
   ...(process.env.APPLE_CLIENT_ID ? [AppleStrategy] : []),
 ];
 

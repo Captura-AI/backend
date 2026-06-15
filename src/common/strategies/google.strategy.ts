@@ -20,9 +20,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google-auth') {
     private readonly _usersService: UsersService,
   ) {
     super({
-      callbackURL: googleConfigService.googleCallbackUrl,
-      clientID: googleConfigService.googleClientId,
-      clientSecret: googleConfigService.googleClientSecret,
+      callbackURL:
+        googleConfigService.googleCallbackUrl ||
+        'http://localhost:1337/api/authentication/google/callback',
+      clientID: googleConfigService.googleClientId || 'google-client-not-configured',
+      clientSecret: googleConfigService.googleClientSecret || 'google-secret-not-configured',
       scope: ['email', 'profile'],
     });
   }

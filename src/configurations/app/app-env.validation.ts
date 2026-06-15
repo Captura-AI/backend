@@ -10,6 +10,11 @@ type AppEnvironmentVariables = {
   APP_NAME: string;
   APP_PORT: string;
   APP_TRUST_PROXY?: string;
+  APPLE_CALLBACK_URL?: string;
+  APPLE_CLIENT_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_PRIVATE_KEY?: string;
+  APPLE_TEAM_ID?: string;
   DATABASE_HOST: string;
   DATABASE_LOGGING?: string;
   DATABASE_NAME: string;
@@ -17,6 +22,9 @@ type AppEnvironmentVariables = {
   DATABASE_PORT: string;
   DATABASE_SYNCHRONIZE?: string;
   DATABASE_USER: string;
+  GOOGLE_CALLBACK_URL?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   JWT_EXPIRES_IN: string;
   JWT_ISSUER: string;
   JWT_SECRET: string;
@@ -158,6 +166,11 @@ export const validateEnvironment = (
     APP_NAME: assertRequired(environment, 'APP_NAME'),
     APP_PORT: String(parsePositiveInteger(environment, 'APP_PORT')),
     APP_TRUST_PROXY: String(parseBoolean(environment, 'APP_TRUST_PROXY', true)),
+    APPLE_CALLBACK_URL: parseOptionalUrl(environment, 'APPLE_CALLBACK_URL'),
+    APPLE_CLIENT_ID: environment.APPLE_CLIENT_ID?.trim(),
+    APPLE_KEY_ID: environment.APPLE_KEY_ID?.trim(),
+    APPLE_PRIVATE_KEY: environment.APPLE_PRIVATE_KEY?.trim(),
+    APPLE_TEAM_ID: environment.APPLE_TEAM_ID?.trim(),
     DATABASE_HOST: assertRequired(environment, 'DATABASE_HOST'),
     DATABASE_LOGGING: String(parseBoolean(environment, 'DATABASE_LOGGING', false)),
     DATABASE_NAME: assertRequired(environment, 'DATABASE_NAME'),
@@ -165,6 +178,9 @@ export const validateEnvironment = (
     DATABASE_PORT: String(parsePositiveInteger(environment, 'DATABASE_PORT')),
     DATABASE_SYNCHRONIZE: String(parseBoolean(environment, 'DATABASE_SYNCHRONIZE', false)),
     DATABASE_USER: assertRequired(environment, 'DATABASE_USER'),
+    GOOGLE_CALLBACK_URL: parseOptionalUrl(environment, 'GOOGLE_CALLBACK_URL'),
+    GOOGLE_CLIENT_ID: environment.GOOGLE_CLIENT_ID?.trim(),
+    GOOGLE_CLIENT_SECRET: environment.GOOGLE_CLIENT_SECRET?.trim(),
     JWT_EXPIRES_IN: assertRequired(environment, 'JWT_EXPIRES_IN'),
     JWT_ISSUER: assertRequired(environment, 'JWT_ISSUER'),
     JWT_SECRET: assertRequired(environment, 'JWT_SECRET'),
