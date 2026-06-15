@@ -1,6 +1,7 @@
 // Enums
 import type { VehicleTypeEnum } from '../enums/vehicle-type.enum';
 import type { TimeOfDayEnum } from '../dtos/time-filter.dto';
+import type { MomentEntity } from '../entities/moments.entity';
 
 export interface IMomentLocationFilter {
   city?: string;
@@ -35,6 +36,18 @@ export interface IMomentFacetItem {
 export interface IMomentFacets {
   cities: IMomentFacetItem[];
   vehicleTypes: IMomentFacetItem[];
+}
+
+export interface IMomentSearchMatch {
+  isPlateMatch: boolean;
+  isSemanticMatch: boolean;
+  label: 'semantic' | 'plate-exact' | 'plate-partial' | 'text' | 'recent';
+  score: number;
+}
+
+export interface IMomentSearchResult {
+  match: IMomentSearchMatch;
+  moment: MomentEntity;
 }
 
 // Placeholder interface for Phase 2 AI analysis results (populated via gRPC from Python AI Service)

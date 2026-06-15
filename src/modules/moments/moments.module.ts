@@ -11,6 +11,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Services
+import { AiAnalysisService } from './services/ai-analysis.service';
 import { MomentsService } from './services/moments.service';
 
 @Module({
@@ -19,6 +20,6 @@ import { MomentsService } from './services/moments.service';
   imports: [
     TypeOrmModule.forFeature([MomentCollaboratorEntity, MomentEntity, MomentLicenseEntity]),
   ],
-  providers: [MomentsService],
+  providers: [AiAnalysisService, MomentsService],
 })
 export class MomentsModule {}

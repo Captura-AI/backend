@@ -28,7 +28,7 @@ export class MomentsController {
   })
   @ApiBaseResponse(MomentEntity)
   public async search(@Body() body: SearchMomentDto) {
-    const result = await this._momentsService.search(body);
+    const result = await this._momentsService.searchWithMatches(body);
 
     return {
       message: 'Moments retrieved successfully',
