@@ -11,6 +11,7 @@ import { Test } from '@nestjs/testing';
 
 // Services
 import { MomentsService } from '../services/moments.service';
+import { PlateService } from '../../plate/services/plate.service';
 
 // Controllers
 import { MomentsController } from './moments.controller';
@@ -21,7 +22,11 @@ const mockMomentsService = {
   findRecent: jest.fn(),
   findSimilar: jest.fn(),
   getFacets: jest.fn(),
-  search: jest.fn(),
+  searchWithMatches: jest.fn(),
+};
+
+const mockPlateService = {
+  searchByPlate: jest.fn(),
 };
 
 describe('MomentsController', () => {
@@ -30,7 +35,10 @@ describe('MomentsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MomentsController],
-      providers: [{ provide: MomentsService, useValue: mockMomentsService }],
+      providers: [
+        { provide: MomentsService, useValue: mockMomentsService },
+        { provide: PlateService, useValue: mockPlateService },
+      ],
     }).compile();
 
     controller = module.get<MomentsController>(MomentsController);
@@ -44,12 +52,12 @@ describe('MomentsController', () => {
   describe('search()', () => {
     it('returns search results from service', async () => {
       const paginatedResult = { content: [], meta: {} };
-      mockMomentsService.search.mockResolvedValue(paginatedResult);
+      mockMomentsService.searchWithMatches.mockResolvedValue(paginatedResult);
 
       const body = new SearchMomentDto();
       const response = await controller.search(body);
 
-      expect(mockMomentsService.search).toHaveBeenCalledWith(body);
+      expect(mockMomentsService.searchWithMatches).toHaveBeenCalledWith(body);
       expect(response.result).toEqual(paginatedResult);
     });
   });
