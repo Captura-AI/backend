@@ -228,7 +228,7 @@ export class OrdersService {
 
   public async findOrderById(id: string, userId: string): Promise<OrderEntity> {
     const order = await this._orderRepository.findOne({
-      relations: { license: { licenseType: true }, moment: true },
+      relations: { license: { licenseType: true }, moment: { photographerProfile: true } },
       where: { deletedAt: IsNull(), id },
     });
 
@@ -240,7 +240,7 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order.');
     }
 
-    return order;
+    return this._withoutMomentPlate(order);
   }
 
   public async cancelOrder(id: string, userId: string): Promise<OrderEntity> {
