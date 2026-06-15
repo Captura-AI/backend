@@ -4,13 +4,21 @@ import { BAD_REQUEST_MSG } from '../../../common/constants/common.constant';
 // DTOs
 import type { CreateMomentDto } from '../../moments/dtos/create-moment.dto';
 import type { ListMyMomentsDto } from '../../moments/dtos/list-my-moments.dto';
+import type { ListPhotographersDto } from '../dtos/list-photographers.dto';
 import type { OnboardPhotographerDto } from '../dtos/onboard-photographer.dto';
+import type { PhotographerPackageEntity } from '../entities/photographer-package.entity';
 import type { UpdateMomentDto } from '../../moments/dtos/update-moment.dto';
+import type {
+  IPublicPhotographerDetail,
+  IPublicPhotographerDirectoryItem,
+  IPublicPhotographerMoment,
+} from '../interfaces/public-photographers.interface';
 
 // Entities
 import { MomentEntity } from '../../moments/entities/moments.entity';
 import { MomentLicenseEntity } from '../../moments/entities/moment-license.entity';
 import { PhotographerProfileEntity } from '../entities/photographer-profile.entity';
+import { PhotographerReviewEntity } from '../entities/photographer-review.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
 
 // Enums
@@ -32,7 +40,7 @@ import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { UsersService } from '../../users/services/users.service';
 
 // TypeORM
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, ILike, IsNull, Repository } from 'typeorm';
 
 export interface IMyMomentsResult {
   data: MomentEntity[];
@@ -70,6 +78,8 @@ export class PhotographersService {
     await this._usersService.findOneById(userId);
 
     try {
+      const slug = await this._generateProfileSlug(dto.artistName);
+
       return await this._dataSource.transaction(async (manager: EntityManager) => {
         const profile = new PhotographerProfileEntity();
 
@@ -78,6 +88,7 @@ export class PhotographersService {
         profile.isApproved = true;
         profile.joinedAsPhotographerAt = Math.floor(Date.now() / 1000);
         profile.location = dto.location ?? null;
+        profile.slug = slug;
         profile.userId = userId;
 
         const savedProfile = await manager.save(PhotographerProfileEntity, profile);
@@ -115,6 +126,70 @@ export class PhotographersService {
     return profile;
   }
 
+  public async findPublicDirectory(dto: ListPhotographersDto): Promise<{
+    data: IPublicPhotographerDirectoryItem[];
+    limit: number;
+    offset: number;
+    total: number;
+  }> {
+    const limit = dto.limit ?? 12;
+    const offset = dto.offset ?? 1;
+    const where = {
+      deletedAt: IsNull(),
+      isApproved: true,
+      ...(dto.location ? { location: ILike(`%${dto.location}%`) } : {}),
+    };
+
+    const [profiles, total] = await this._photographerProfileRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+      relations: { packages: true, reviews: true, user: true },
+      skip: dto.skip,
+      take: limit,
+      where,
+    });
+
+    const momentsByProfileId = await this._findLatestMomentsByProfileIds(
+      profiles.map((profile) => profile.id),
+      3,
+    );
+    const data = profiles.map((profile) =>
+      this._toDirectoryItem(profile, momentsByProfileId.get(profile.id) ?? []),
+    );
+
+    return { data, limit, offset, total };
+  }
+
+  public async findPublicDetailBySlug(slug: string): Promise<IPublicPhotographerDetail> {
+    const profile = await this._photographerProfileRepository.findOne({
+      relations: { packages: true, reviews: true, user: true },
+      where: { deletedAt: IsNull(), isApproved: true, slug },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(`Photographer profile with slug ${slug} not found.`);
+    }
+
+    const portfolio = await this._momentRepository.find({
+      order: { capturedAt: 'DESC', createdAt: 'DESC' },
+      take: 12,
+      where: { deletedAt: IsNull(), photographerProfileId: profile.id },
+    });
+    const latestMoments = portfolio.slice(0, 3);
+    const directoryItem = this._toDirectoryItem(profile, latestMoments);
+
+    return {
+      ...directoryItem,
+      portfolio: portfolio.map((moment) => this._toPublicMoment(moment)),
+      reviews: this._publishedReviews(profile).map((review) => ({
+        authorName: review.authorName,
+        context: review.context,
+        id: review.id,
+        quote: review.quote,
+        rating: review.rating,
+      })),
+    };
+  }
+
   /**
    * @description Find a photographer profile by user ID (returns null if not a photographer)
    */
@@ -136,7 +211,7 @@ export class PhotographersService {
       throw new ForbiddenException('User is not a registered photographer.');
     }
 
-    const slug = this._generateSlug(dto.caption);
+    const slug = this._generateMomentSlug(dto.caption);
 
     // Auto-tag the moment with AI-detected plate / motor type / color so it
     // becomes searchable. Run outside the DB transaction (network I/O) and stay
@@ -335,7 +410,54 @@ export class PhotographersService {
     }
   }
 
-  private _generateSlug(caption: string): string {
+  private async _findLatestMomentsByProfileIds(
+    profileIds: string[],
+    perProfileLimit: number,
+  ): Promise<Map<string, MomentEntity[]>> {
+    if (profileIds.length === 0) {
+      return new Map<string, MomentEntity[]>();
+    }
+
+    const moments = await this._momentRepository.find({
+      order: { capturedAt: 'DESC', createdAt: 'DESC' },
+      where: profileIds.map((profileId) => ({
+        deletedAt: IsNull(),
+        photographerProfileId: profileId,
+      })),
+    });
+
+    return moments.reduce((grouped, moment) => {
+      const profileId = moment.photographerProfileId;
+
+      if (!profileId) {
+        return grouped;
+      }
+
+      const current = grouped.get(profileId) ?? [];
+
+      if (current.length < perProfileLimit) {
+        grouped.set(profileId, [...current, moment]);
+      }
+
+      return grouped;
+    }, new Map<string, MomentEntity[]>());
+  }
+
+  private _activePackages(profile: PhotographerProfileEntity): PhotographerPackageEntity[] {
+    return (profile.packages ?? []).filter((item) => item.isActive && item.deletedAt === null);
+  }
+
+  private _averageRating(reviews: PhotographerReviewEntity[]): number | null {
+    if (reviews.length === 0) {
+      return null;
+    }
+
+    const total = reviews.reduce((sum, review) => sum + review.rating, 0);
+
+    return Math.round((total / reviews.length) * 10) / 10;
+  }
+
+  private _generateMomentSlug(caption: string): string {
     const base = caption
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, '')
@@ -343,5 +465,96 @@ export class PhotographersService {
       .replace(/\s+/g, '-')
       .substring(0, 200);
     return `${base || 'moment'}-${Date.now()}`;
+  }
+
+  private async _generateProfileSlug(artistName: string): Promise<string> {
+    const base = this._slugify(artistName).substring(0, 120) || 'photographer';
+    let candidate = base;
+    let suffix = 2;
+
+    while (await this._photographerProfileRepository.findOne({ where: { slug: candidate } })) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
+  }
+
+  private _maskPlate(value: string | null): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const normalized = value.trim().toUpperCase();
+
+    if (normalized.length <= 4) {
+      return `${normalized.slice(0, 1)}***`;
+    }
+
+    return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
+  }
+
+  private _publishedReviews(profile: PhotographerProfileEntity): PhotographerReviewEntity[] {
+    return (profile.reviews ?? []).filter((item) => item.isPublished && item.deletedAt === null);
+  }
+
+  private _slugify(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  private _toDirectoryItem(
+    profile: PhotographerProfileEntity,
+    latestMoments: MomentEntity[],
+  ): IPublicPhotographerDirectoryItem {
+    const packages = this._activePackages(profile);
+    const reviews = this._publishedReviews(profile);
+
+    return {
+      avatarUrl: profile.user?.avatar ?? null,
+      bio: profile.bio,
+      id: profile.id,
+      isApproved: profile.isApproved,
+      latestMoments: latestMoments.map((moment) => this._toPublicMoment(moment)),
+      location: profile.location,
+      name: profile.artistName,
+      packages: packages.map((item) => ({
+        currency: item.currency,
+        description: item.description,
+        duration: item.duration,
+        id: item.id,
+        includes: item.includes ?? [],
+        name: item.name,
+        price: Number(item.price),
+      })),
+      slug: profile.slug,
+      stats: {
+        averageRating: this._averageRating(reviews),
+        momentsCount: latestMoments.length,
+        packagesCount: packages.length,
+        reviewsCount: reviews.length,
+      },
+    };
+  }
+
+  private _toPublicMoment(moment: MomentEntity): IPublicPhotographerMoment {
+    const tags = moment.tags ?? [];
+    const category = moment.vehicleType ?? tags[0] ?? 'Street';
+
+    return {
+      capturedAt: moment.capturedAt,
+      category,
+      city: moment.city,
+      district: moment.district,
+      id: moment.id,
+      imageUrl: moment.thumbnailUrl ?? moment.imageUrl,
+      licensePlate: this._maskPlate(moment.licensePlate),
+      slug: moment.slug,
+      tags,
+      title: moment.caption ?? 'Untitled moment',
+      vehicleType: moment.vehicleType,
+    };
   }
 }

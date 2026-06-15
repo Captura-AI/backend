@@ -1,4 +1,6 @@
 // Entities
+import { PhotographerPackageEntity } from './photographer-package.entity';
+import { PhotographerReviewEntity } from './photographer-review.entity';
 import { AppBaseEntity } from '../../../common/entities/base.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
 
@@ -6,7 +8,7 @@ import { UsersEntity } from '../../users/entities/users.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 // TypeORM
-import { Column, Entity, JoinColumn, OneToOne } from 'typeorm';
+import { Column, Entity, JoinColumn, OneToMany, OneToOne } from 'typeorm';
 
 @Entity('photographer_profiles')
 export class PhotographerProfileEntity extends AppBaseEntity {
@@ -21,6 +23,10 @@ export class PhotographerProfileEntity extends AppBaseEntity {
   @ApiProperty()
   @Column({ name: 'artist_name', type: 'varchar', length: 100 })
   public artistName!: string;
+
+  @ApiProperty({ description: 'URL-friendly public identifier' })
+  @Column({ name: 'slug', type: 'varchar', length: 140, unique: true })
+  public slug!: string;
 
   @ApiProperty({ nullable: true })
   @Column({ name: 'bio', type: 'text', nullable: true })
@@ -37,4 +43,14 @@ export class PhotographerProfileEntity extends AppBaseEntity {
   @ApiProperty({ default: true })
   @Column({ name: 'is_approved', type: 'boolean', default: true })
   public isApproved!: boolean;
+
+  @OneToMany(() => PhotographerPackageEntity, (item) => item.photographerProfile, {
+    eager: false,
+  })
+  public packages?: PhotographerPackageEntity[];
+
+  @OneToMany(() => PhotographerReviewEntity, (item) => item.photographerProfile, {
+    eager: false,
+  })
+  public reviews?: PhotographerReviewEntity[];
 }
