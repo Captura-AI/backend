@@ -8,9 +8,11 @@ export default registerAs('app', () => ({
   appName: process.env.APP_NAME,
   appPort: process.env.APP_PORT,
   appTrustProxy: process.env.APP_TRUST_PROXY,
-  midtransClientKey: process.env.MIDTRANS_CLIENT_KEY,
-  midtransIsProduction: process.env.MIDTRANS_IS_PRODUCTION,
-  midtransServerKey: process.env.MIDTRANS_SERVER_KEY,
+  midtransClientKey:
+    process.env.MIDTRANS_CLIENT_KEY ?? 'SB-Mid-server-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  midtransIsProduction: process.env.MIDTRANS_IS_PRODUCTION ?? 'false',
+  midtransServerKey:
+    process.env.MIDTRANS_SERVER_KEY ?? 'SB-Mid-server-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   otelEnabled: process.env.OTEL_ENABLED,
   otelExportInterval: process.env.OTEL_EXPORT_INTERVAL,
   otelMetricsEnabled: process.env.OTEL_METRICS_ENABLED,

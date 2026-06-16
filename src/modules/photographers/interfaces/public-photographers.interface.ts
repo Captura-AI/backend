@@ -48,7 +48,7 @@ export interface IPublicPhotographerDirectoryItem {
   location: string | null;
   name: string;
   packages: IPublicPhotographerPackage[];
-  slug: string;
+  slug: string | null;
   stats: IPublicPhotographerStats;
 }
 

@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24 <27"
   },
   "scripts": {
     "build": "nest build",
@@ -20,6 +20,8 @@
     "start:prod": "node dist/main",
     "lint:check": "node lint-check.mjs",
     "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/postgres/postgres-data-source.ts",
+    "migration:show": "typeorm-ts-node-commonjs migration:show -d src/database/postgres/postgres-data-source.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -89,7 +91,7 @@
     "@types/supertest": "7.2.0",
     "@typescript-eslint/eslint-plugin": "8.58.2",
     "@typescript-eslint/parser": "8.58.2",
-    "eslint": "10.2.1",
+    "eslint": "9.39.4",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-prettier": "5.5.5",

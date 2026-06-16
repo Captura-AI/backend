@@ -25,8 +25,8 @@ export class PhotographerProfileEntity extends AppBaseEntity {
   public artistName!: string;
 
   @ApiProperty({ description: 'URL-friendly public identifier' })
-  @Column({ name: 'slug', type: 'varchar', length: 140, unique: true })
-  public slug!: string;
+  @Column({ name: 'slug', type: 'varchar', length: 140, nullable: true, unique: true })
+  public slug!: string | null;
 
   @ApiProperty({ nullable: true })
   @Column({ name: 'bio', type: 'text', nullable: true })
