@@ -15,6 +15,7 @@ import { AppLoggerModule } from './configurations/logger/logger.module';
 
 // Modules
 import { AuthenticationModule } from './modules/authentication/authentication.module';
+import { HotspotsModule } from './modules/hotspots/hotspots.module';
 import { LicenseTypesModule } from './modules/license-types/license-types.module';
 import { MomentsModule } from './modules/moments/moments.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -56,6 +57,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
     // Core Feature Modules
     AuthenticationModule,
+    HotspotsModule,
     LicenseTypesModule,
     MomentsModule,
     OrdersModule,
