@@ -5,6 +5,8 @@ import { TimeOfDayEnum } from '../dtos/time-filter.dto';
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
 import { MomentLicenseEntity } from '../entities/moment-license.entity';
+import { PhotographerProfileEntity } from '../../photographers/entities/photographer-profile.entity';
+import { UsersEntity } from '../../users/entities/users.entity';
 
 // Enums
 import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
@@ -21,6 +23,7 @@ import { MomentsService } from './moments.service';
 
 const buildMockQueryBuilder = (data: MomentEntity[], total: number) => {
   const qb: Record<string, jest.Mock> = {
+    addOrderBy: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     cache: jest.fn().mockReturnThis(),
@@ -162,7 +165,7 @@ describe('MomentsService', () => {
       });
     });
 
-    it('applies normalized licensePlate partial match filter', async () => {
+    it('applies normalized and fuzzy licensePlate match filter', async () => {
       const qb = buildMockQueryBuilder([mockMoment()], 1);
       mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
 
@@ -171,12 +174,47 @@ describe('MomentsService', () => {
 
       await service.search(filters);
 
-      expect(qb.andWhere).toHaveBeenCalledWith(
-        "regexp_replace(upper(moments.license_plate), '[^A-Z0-9]', '', 'g') LIKE :plate",
-        {
-          plate: '%B1234%',
-        },
+      const callArgs = (qb.andWhere as jest.Mock).mock.calls;
+      const plateCall = callArgs.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('similarity'),
       );
+      expect(plateCall).toBeDefined();
+      expect(plateCall[1]).toEqual(
+        expect.objectContaining({
+          canonicalPlate: '81234',
+          maxPlateDistance: 2,
+          plate: 'B1234',
+          platePattern: '%B1234%',
+        }),
+      );
+      expect(qb.addSelect).toHaveBeenCalledWith(
+        expect.stringContaining('levenshtein_less_equal'),
+        'plate_match_score',
+      );
+      expect(qb.orderBy).toHaveBeenCalledWith('plate_match_score', 'DESC');
+      expect(qb.addOrderBy).toHaveBeenCalledWith('moments.captured_at', 'DESC');
+    });
+
+    it('keeps short licensePlate queries on exact or partial matching only', async () => {
+      const qb = buildMockQueryBuilder([mockMoment()], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const filters = new SearchMomentDto();
+      filters.licensePlate = 'B 1';
+
+      await service.search(filters);
+
+      const callArgs = (qb.andWhere as jest.Mock).mock.calls;
+      const plateCall = callArgs.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('LIKE :platePattern'),
+      );
+
+      expect(plateCall).toBeDefined();
+      expect(plateCall[0]).not.toContain('levenshtein_less_equal');
+      expect(plateCall[1]).toEqual({
+        plate: 'B1',
+        platePattern: '%B1%',
+      });
     });
 
     it('applies timeRange from/to filter', async () => {
@@ -273,6 +311,68 @@ describe('MomentsService', () => {
     });
   });
 
+  describe('searchWithMatches()', () => {
+    it('labels exact plate matches above other match signals', async () => {
+      const moment = mockMoment();
+      moment.caption = 'Sunday ride';
+      moment.embeddingVector = [0.1];
+      moment.licensePlate = 'B 1234 ABC';
+
+      const qb = buildMockQueryBuilder([moment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const filters = new SearchMomentDto();
+      filters.licensePlate = 'B1234ABC';
+      filters.query = 'Sunday';
+
+      const result = await service.searchWithMatches(filters);
+
+      expect(result.content[0]?.match).toEqual({
+        isPlateMatch: true,
+        isSemanticMatch: false,
+        label: 'plate-exact',
+        score: 1,
+      });
+      expect(result.content[0]?.moment.licensePlate).toBe('B ***BC');
+    });
+
+    it('labels partial plate matches for prefix searches', async () => {
+      const moment = mockMoment();
+      moment.licensePlate = 'B 1234 ABC';
+
+      const qb = buildMockQueryBuilder([moment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const filters = new SearchMomentDto();
+      filters.licensePlate = 'B 1234';
+
+      const result = await service.searchWithMatches(filters);
+
+      expect(result.content[0]?.match.label).toBe('plate-partial');
+      expect(result.content[0]?.match.score).toBe(0.86);
+    });
+
+    it('labels OCR-confused plate matches as fuzzy', async () => {
+      const moment = mockMoment();
+      moment.licensePlate = 'B 1234 ABC';
+
+      const qb = buildMockQueryBuilder([moment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const filters = new SearchMomentDto();
+      filters.licensePlate = '8 1234 A8C';
+
+      const result = await service.searchWithMatches(filters);
+
+      expect(result.content[0]?.match).toEqual({
+        isPlateMatch: true,
+        isSemanticMatch: false,
+        label: 'plate-fuzzy',
+        score: 0.84,
+      });
+    });
+  });
+
   describe('findOneById()', () => {
     it('returns moment with null photographerSummary when no profile linked', async () => {
       const moment = mockMoment();
@@ -294,14 +394,17 @@ describe('MomentsService', () => {
 
     it('includes photographer summary when profile is linked', async () => {
       const moment = mockMoment();
+      const photographerProfile = new PhotographerProfileEntity();
+      const photographerUser = new UsersEntity();
+
+      photographerUser.avatar = 'https://example.com/avatar.jpg';
+      photographerProfile.id = 'profile-uuid';
+      photographerProfile.artistName = 'Ansel Adams';
+      photographerProfile.bio = 'Landscape photographer';
+      photographerProfile.location = 'Yosemite';
+      photographerProfile.user = photographerUser;
       moment.photographerProfileId = 'profile-uuid';
-      moment.photographerProfile = {
-        id: 'profile-uuid',
-        artistName: 'Ansel Adams',
-        bio: 'Landscape photographer',
-        location: 'Yosemite',
-        user: { avatar: 'https://example.com/avatar.jpg' },
-      } as any;
+      moment.photographerProfile = photographerProfile;
 
       const qb = buildMockQueryBuilder([moment], 1);
       mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);

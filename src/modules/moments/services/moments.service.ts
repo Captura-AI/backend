@@ -35,9 +35,101 @@ import { AiAnalysisService } from './ai-analysis.service';
 const SOFT_DELETE_FILTER = 'moments.deleted_at IS NULL';
 const COL_CAPTURED_AT = 'moments.captured_at';
 const NORMALIZED_PLATE_SQL = `regexp_replace(upper(moments.license_plate), '[^A-Z0-9]', '', 'g')`;
+const CANONICAL_PLATE_SQL = `translate(${NORMALIZED_PLATE_SQL}, 'OQIBSZG', '0018526')`;
+const CANONICAL_PLATE_TRIGRAM_THRESHOLD = 0.42;
+const MAX_PLATE_LEVENSHTEIN_DISTANCE = 2;
+const MIN_FUZZY_PLATE_LENGTH = 4;
+const PLATE_FUZZY_CANONICAL_EXACT_SCORE = 0.84;
+const PLATE_FUZZY_DISTANCE_SCORE = 0.8;
+const PLATE_FUZZY_SIMILARITY_SCORE = 0.72;
+const PLATE_PARTIAL_SCORE = 0.86;
+const PLATE_TRIGRAM_THRESHOLD = 0.35;
+
+type PlateMatchLabel = 'plate-exact' | 'plate-fuzzy' | 'plate-partial';
+
+const PLATE_FUZZY_LABEL: PlateMatchLabel = 'plate-fuzzy';
+
+interface IPlateMatchScore {
+  label: PlateMatchLabel;
+  score: number;
+}
 
 function normalizePlate(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function canonicalizePlate(value: string): string {
+  return normalizePlate(value)
+    .replace(/[OQ]/g, '0')
+    .replace(/I/g, '1')
+    .replace(/B/g, '8')
+    .replace(/S/g, '5')
+    .replace(/Z/g, '2')
+    .replace(/G/g, '6');
+}
+
+function getPlateEditDistance(source: string, target: string): number {
+  if (source === target) {
+    return 0;
+  }
+
+  if (!source) {
+    return target.length;
+  }
+
+  if (!target) {
+    return source.length;
+  }
+
+  const previousRow = Array.from({ length: target.length + 1 }, (_, index) => index);
+
+  for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
+    const currentRow = [sourceIndex + 1];
+
+    for (let targetIndex = 0; targetIndex < target.length; targetIndex += 1) {
+      const deletionCost = (previousRow.at(targetIndex + 1) ?? 0) + 1;
+      const insertionCost = (currentRow.at(targetIndex) ?? 0) + 1;
+      const substitutionCost =
+        (previousRow.at(targetIndex) ?? 0) +
+        (source.charAt(sourceIndex) === target.charAt(targetIndex) ? 0 : 1);
+
+      currentRow.push(Math.min(deletionCost, insertionCost, substitutionCost));
+    }
+
+    previousRow.splice(0, previousRow.length, ...currentRow);
+  }
+
+  return previousRow.at(target.length) ?? 0;
+}
+
+function getPlateTrigrams(value: string): Set<string> {
+  const paddedValue = `  ${value} `;
+  const trigrams = new Set<string>();
+
+  for (let index = 0; index <= paddedValue.length - 3; index += 1) {
+    trigrams.add(paddedValue.slice(index, index + 3));
+  }
+
+  return trigrams;
+}
+
+function getPlateTrigramSimilarity(source: string, target: string): number {
+  if (!source || !target) {
+    return 0;
+  }
+
+  const sourceTrigrams = getPlateTrigrams(source);
+  const targetTrigrams = getPlateTrigrams(target);
+  const intersectionSize = [...sourceTrigrams].filter((trigram) =>
+    targetTrigrams.has(trigram),
+  ).length;
+  const unionSize = new Set([...sourceTrigrams, ...targetTrigrams]).size;
+
+  return unionSize > 0 ? intersectionSize / unionSize : 0;
+}
+
+function isFuzzyPlateEnabled(normalizedPlate: string): boolean {
+  return normalizedPlate.length >= MIN_FUZZY_PLATE_LENGTH;
 }
 
 function vectorLiteral(vector: number[]): string {
@@ -83,36 +175,71 @@ function scoreTextMatch(moment: MomentEntity, query?: string): number {
   return searchableValues.some((value) => value.includes(normalizedQuery)) ? 0.68 : 0.42;
 }
 
-function scorePlateMatch(moment: MomentEntity, licensePlate?: string): number {
+function scorePlateMatch(moment: MomentEntity, licensePlate?: string): IPlateMatchScore | null {
   if (!licensePlate || !moment.licensePlate) {
-    return 0;
+    return null;
   }
 
   const queryPlate = normalizePlate(licensePlate);
   const momentPlate = normalizePlate(moment.licensePlate);
 
   if (!queryPlate || !momentPlate) {
-    return 0;
+    return null;
   }
 
   if (momentPlate === queryPlate) {
-    return 1;
+    return { label: 'plate-exact', score: 1 };
   }
 
-  return momentPlate.includes(queryPlate) || queryPlate.includes(momentPlate) ? 0.86 : 0;
+  if (momentPlate.includes(queryPlate) || queryPlate.includes(momentPlate)) {
+    return { label: 'plate-partial', score: PLATE_PARTIAL_SCORE };
+  }
+
+  if (!isFuzzyPlateEnabled(queryPlate)) {
+    return null;
+  }
+
+  const canonicalMomentPlate = canonicalizePlate(momentPlate);
+  const canonicalQueryPlate = canonicalizePlate(queryPlate);
+
+  if (canonicalMomentPlate === canonicalQueryPlate) {
+    return { label: PLATE_FUZZY_LABEL, score: PLATE_FUZZY_CANONICAL_EXACT_SCORE };
+  }
+
+  const normalizedDistance = getPlateEditDistance(momentPlate, queryPlate);
+  const canonicalDistance = getPlateEditDistance(canonicalMomentPlate, canonicalQueryPlate);
+
+  if (
+    normalizedDistance <= MAX_PLATE_LEVENSHTEIN_DISTANCE ||
+    canonicalDistance <= MAX_PLATE_LEVENSHTEIN_DISTANCE
+  ) {
+    return { label: PLATE_FUZZY_LABEL, score: PLATE_FUZZY_DISTANCE_SCORE };
+  }
+
+  const normalizedSimilarity = getPlateTrigramSimilarity(momentPlate, queryPlate);
+  const canonicalSimilarity = getPlateTrigramSimilarity(canonicalMomentPlate, canonicalQueryPlate);
+
+  if (
+    normalizedSimilarity >= PLATE_TRIGRAM_THRESHOLD ||
+    canonicalSimilarity >= CANONICAL_PLATE_TRIGRAM_THRESHOLD
+  ) {
+    return { label: PLATE_FUZZY_LABEL, score: PLATE_FUZZY_SIMILARITY_SCORE };
+  }
+
+  return null;
 }
 
 function buildMatch(moment: MomentEntity, filters: SearchMomentDto): IMomentSearchMatch {
-  const plateScore = scorePlateMatch(moment, filters.licensePlate);
+  const plateMatch = scorePlateMatch(moment, filters.licensePlate);
   const textScore = scoreTextMatch(moment, filters.query);
   const semanticScore = filters.query && moment.embeddingVector ? 0.74 : 0;
-  const score = Math.max(plateScore, semanticScore, textScore, 0.25);
+  const score = Math.max(plateMatch?.score ?? 0, semanticScore, textScore, 0.25);
 
-  if (plateScore > 0) {
+  if (plateMatch) {
     return {
       isPlateMatch: true,
       isSemanticMatch: false,
-      label: plateScore === 1 ? 'plate-exact' : 'plate-partial',
+      label: plateMatch.label,
       score,
     };
   }
@@ -179,9 +306,75 @@ export class MomentsService {
       return;
     }
 
-    query.andWhere(`${NORMALIZED_PLATE_SQL} LIKE :plate`, {
-      plate: `%${normalizedPlate}%`,
-    });
+    const canonicalPlate = canonicalizePlate(normalizedPlate);
+    const isFuzzyEnabled = isFuzzyPlateEnabled(normalizedPlate);
+    const exactOrPartialSql = `(
+      ${NORMALIZED_PLATE_SQL} = :plate OR
+      ${NORMALIZED_PLATE_SQL} LIKE :platePattern OR
+      :plate LIKE '%' || ${NORMALIZED_PLATE_SQL} || '%'
+    )`;
+
+    if (!isFuzzyEnabled) {
+      query
+        .andWhere(exactOrPartialSql, {
+          plate: normalizedPlate,
+          platePattern: `%${normalizedPlate}%`,
+        })
+        .addSelect(
+          `CASE
+            WHEN ${NORMALIZED_PLATE_SQL} = :plate THEN 1
+            WHEN ${NORMALIZED_PLATE_SQL} LIKE :platePattern OR :plate LIKE '%' || ${NORMALIZED_PLATE_SQL} || '%' THEN ${PLATE_PARTIAL_SCORE}
+            ELSE 0
+          END`,
+          'plate_match_score',
+        );
+
+      return;
+    }
+
+    query
+      .andWhere(
+        `(
+          ${exactOrPartialSql} OR
+          ${CANONICAL_PLATE_SQL} = :canonicalPlate OR
+          levenshtein_less_equal(${NORMALIZED_PLATE_SQL}, :plate, :maxPlateDistance) <= :maxPlateDistance OR
+          levenshtein_less_equal(${CANONICAL_PLATE_SQL}, :canonicalPlate, :maxPlateDistance) <= :maxPlateDistance OR
+          similarity(${NORMALIZED_PLATE_SQL}, :plate) >= :plateTrigramThreshold OR
+          similarity(${CANONICAL_PLATE_SQL}, :canonicalPlate) >= :canonicalPlateTrigramThreshold
+        )`,
+        {
+          canonicalPlate,
+          canonicalPlateTrigramThreshold: CANONICAL_PLATE_TRIGRAM_THRESHOLD,
+          maxPlateDistance: MAX_PLATE_LEVENSHTEIN_DISTANCE,
+          plate: normalizedPlate,
+          platePattern: `%${normalizedPlate}%`,
+          plateTrigramThreshold: PLATE_TRIGRAM_THRESHOLD,
+        },
+      )
+      .addSelect(
+        `CASE
+          WHEN ${NORMALIZED_PLATE_SQL} = :plate THEN 1
+          WHEN ${NORMALIZED_PLATE_SQL} LIKE :platePattern OR :plate LIKE '%' || ${NORMALIZED_PLATE_SQL} || '%' THEN ${PLATE_PARTIAL_SCORE}
+          WHEN ${CANONICAL_PLATE_SQL} = :canonicalPlate THEN ${PLATE_FUZZY_CANONICAL_EXACT_SCORE}
+          WHEN levenshtein_less_equal(${NORMALIZED_PLATE_SQL}, :plate, :maxPlateDistance) <= :maxPlateDistance THEN ${PLATE_FUZZY_DISTANCE_SCORE}
+          WHEN levenshtein_less_equal(${CANONICAL_PLATE_SQL}, :canonicalPlate, :maxPlateDistance) <= :maxPlateDistance THEN ${PLATE_FUZZY_DISTANCE_SCORE}
+          ELSE ${PLATE_FUZZY_SIMILARITY_SCORE}
+        END`,
+        'plate_match_score',
+      );
+  }
+
+  private _applyPlateOrdering(
+    query: SelectQueryBuilder<MomentEntity>,
+    hasQueryEmbedding: boolean,
+  ): void {
+    query.orderBy('plate_match_score', 'DESC');
+
+    if (hasQueryEmbedding) {
+      query.addOrderBy('semantic_distance', 'ASC');
+    }
+
+    query.addOrderBy(COL_CAPTURED_AT, 'DESC');
   }
 
   private async _getQueryEmbedding(filters: SearchMomentDto): Promise<number[] | null> {
@@ -287,7 +480,9 @@ export class MomentsService {
         this._applyPlateFilter(filters.licensePlate, query);
       }
 
-      if (!queryEmbedding && filters.sortBy?.length) {
+      if (filters.licensePlate) {
+        this._applyPlateOrdering(query, Boolean(queryEmbedding));
+      } else if (!queryEmbedding && filters.sortBy?.length) {
         this._sortData(filters, query);
       } else if (!queryEmbedding) {
         query.orderBy(COL_CAPTURED_AT, 'DESC');

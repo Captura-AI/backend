@@ -41,7 +41,7 @@ export interface IMomentFacets {
 export interface IMomentSearchMatch {
   isPlateMatch: boolean;
   isSemanticMatch: boolean;
-  label: 'semantic' | 'plate-exact' | 'plate-partial' | 'text' | 'recent';
+  label: 'semantic' | 'plate-exact' | 'plate-fuzzy' | 'plate-partial' | 'text' | 'recent';
   score: number;
 }
 
