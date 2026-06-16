@@ -33,7 +33,12 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 import { AiAnalysisService } from './ai-analysis.service';
 
 const SOFT_DELETE_FILTER = 'moments.deleted_at IS NULL';
+// Raw SQL column reference — safe inside andWhere/EXTRACT expressions.
 const COL_CAPTURED_AT = 'moments.captured_at';
+// Entity property path for orderBy. TypeORM resolves orderBy targets to column
+// metadata when paginating (skip/take), so it must be the camelCase property,
+// not the snake_case DB column — otherwise getMany throws on `databaseName`.
+const ORDER_CAPTURED_AT = 'moments.capturedAt';
 const NORMALIZED_PLATE_SQL = `regexp_replace(upper(moments.license_plate), '[^A-Z0-9]', '', 'g')`;
 const CANONICAL_PLATE_SQL = `translate(${NORMALIZED_PLATE_SQL}, 'OQIBSZG', '0018526')`;
 const CANONICAL_PLATE_TRIGRAM_THRESHOLD = 0.42;
@@ -374,7 +379,7 @@ export class MomentsService {
       query.addOrderBy('semantic_distance', 'ASC');
     }
 
-    query.addOrderBy(COL_CAPTURED_AT, 'DESC');
+    query.addOrderBy(ORDER_CAPTURED_AT, 'DESC');
   }
 
   private async _getQueryEmbedding(filters: SearchMomentDto): Promise<number[] | null> {
@@ -398,7 +403,7 @@ export class MomentsService {
 
   private _sortData(filters: SearchMomentDto, query: SelectQueryBuilder<MomentEntity>): void {
     const permitSort = {
-      capturedAt: COL_CAPTURED_AT,
+      capturedAt: ORDER_CAPTURED_AT,
     };
 
     QuerySortingHelper(query, filters.sortBy ?? ['capturedAt|DESC'], permitSort);
@@ -485,7 +490,7 @@ export class MomentsService {
       } else if (!queryEmbedding && filters.sortBy?.length) {
         this._sortData(filters, query);
       } else if (!queryEmbedding) {
-        query.orderBy(COL_CAPTURED_AT, 'DESC');
+        query.orderBy(ORDER_CAPTURED_AT, 'DESC');
       }
 
       query.take(filters.limit ?? 10);
