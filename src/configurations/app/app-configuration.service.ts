@@ -113,4 +113,8 @@ export class AppConfigurationsService {
   get aiServiceUrl(): string {
     return this._configurationsService.get<string>('app.aiServiceUrl') ?? 'http://localhost:8000';
   }
+
+  get webBaseUrl(): string {
+    return this._configurationsService.get<string>('app.webBaseUrl') ?? 'http://localhost:3000';
+  }
 }

@@ -1,5 +1,6 @@
 // Configuration Modules
 import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
+import { MailConfigModule } from '../../configurations/mail/mail-configuration.module';
 
 // Controllers
 import { DownloadsController } from './controllers/downloads.controller';
@@ -20,6 +21,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Services
 import { MidtransService } from './services/midtrans.service';
+import { OrderReceiptMailService } from './services/order-receipt-mail.service';
 import { OrdersService } from './services/orders.service';
 
 @Module({
@@ -28,7 +30,8 @@ import { OrdersService } from './services/orders.service';
   imports: [
     TypeOrmModule.forFeature([MomentEntity, MomentLicenseEntity, OrderEntity, OrderItemEntity]),
     AppConfigurationModule,
+    MailConfigModule,
   ],
-  providers: [MidtransService, OrdersService],
+  providers: [MidtransService, OrderReceiptMailService, OrdersService],
 })
 export class OrdersModule {}

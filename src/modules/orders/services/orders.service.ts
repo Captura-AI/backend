@@ -8,6 +8,9 @@ import { BAD_REQUEST_MSG } from '../../../common/constants/common.constant';
 import type { CheckoutRequestDto } from '../dtos/checkout-request.dto';
 import type { ListOrdersDto } from '../dtos/list-orders.dto';
 
+// Emails
+import type { IOrderReceiptData } from '../emails/order-receipt.template';
+
 // Entities
 import { MomentEntity } from '../../moments/entities/moments.entity';
 import { MomentLicenseEntity } from '../../moments/entities/moment-license.entity';
@@ -40,6 +43,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 // Services
 import { AppConfigurationsService } from '../../../configurations/app/app-configuration.service';
 import { MidtransService } from './midtrans.service';
+import { OrderReceiptMailService } from './order-receipt-mail.service';
 
 // TypeORM
 import { IsNull, Repository, type FindOptionsWhere } from 'typeorm';
@@ -63,6 +67,7 @@ export class OrdersService {
 
     private readonly _midtransService: MidtransService,
     private readonly _config: AppConfigurationsService,
+    private readonly _receiptMailService: OrderReceiptMailService,
   ) {}
 
   public async checkout(userId: string, dto: CheckoutRequestDto): Promise<ICheckoutResult> {
@@ -355,5 +360,63 @@ export class OrdersService {
     }
 
     await this._orderRepository.update(order.id, updateData);
+
+    if (newStatus === OrderStatusEnum.PAID) {
+      // Fire-and-forget: a receipt failure must never break the webhook.
+      void this._sendReceiptForOrder(order.id);
+    }
+  }
+
+  /**
+   * @description Build and send the buyer receipt for a paid order. Reloads the
+   * order with the moment/license relations needed for the email and never
+   * throws — failures are logged inside the mail service.
+   */
+  private async _sendReceiptForOrder(orderId: string): Promise<void> {
+    try {
+      const order = await this._orderRepository.findOne({
+        relations: { license: { licenseType: true }, moment: { photographerProfile: true } },
+        where: { id: orderId },
+      });
+
+      if (!order) {
+        return;
+      }
+
+      const recipient = order.billingInfo?.email;
+
+      if (!recipient) {
+        this._logger.warn(`[WARN] No billing email on order ${orderId}; skipping receipt.`);
+
+        return;
+      }
+
+      await this._receiptMailService.sendReceipt(recipient, this._toReceiptData(order));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this._logger.error(`[ERROR] Could not prepare receipt for order ${orderId}: ${message}`);
+    }
+  }
+
+  private _toReceiptData(order: OrderEntity): IOrderReceiptData {
+    const buyerName = [order.billingInfo?.firstName, order.billingInfo?.lastName]
+      .filter(Boolean)
+      .join(' ');
+
+    return {
+      buyerName: buyerName || 'there',
+      currency: order.currency,
+      discount: Number(order.discountAmount),
+      libraryUrl: `${this._config.webBaseUrl}/account/library`,
+      licenseName: order.license?.licenseType?.name ?? 'Standard license',
+      momentTitle: order.moment?.caption ?? 'Captura moment',
+      orderId: order.id,
+      paidAtUnix: order.paidAt,
+      photographerName: order.moment?.photographerProfile?.artistName ?? 'Captura photographer',
+      serviceFee: Number(order.serviceFee),
+      subtotal: Number(order.subtotalAmount),
+      tax: Number(order.taxAmount),
+      total: Number(order.totalAmount),
+    };
   }
 }

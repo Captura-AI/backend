@@ -20,4 +20,5 @@ export default registerAs('app', () => ({
   taxRate: process.env.TAX_RATE,
   throttleLimit: process.env.THROTTLE_LIMIT,
   throttleTtl: process.env.THROTTLE_TTL,
+  webBaseUrl: process.env.WEB_BASE_URL,
 }));
