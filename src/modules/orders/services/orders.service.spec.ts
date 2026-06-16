@@ -22,6 +22,7 @@ import { Test } from '@nestjs/testing';
 // Services
 import { AppConfigurationsService } from '../../../configurations/app/app-configuration.service';
 import { MidtransService } from './midtrans.service';
+import { OrderReceiptMailService } from './order-receipt-mail.service';
 import { OrdersService } from './orders.service';
 
 const mockMoment = (): MomentEntity => {
@@ -106,7 +107,10 @@ describe('OrdersService', () => {
     paymentExpiryMinutes: number;
     serviceFeeRate: number;
     taxRate: number;
+    webBaseUrl: string;
   };
+
+  let mockReceiptMailService: { sendReceipt: jest.Mock };
 
   beforeEach(async () => {
     mockOrderRepo = {
@@ -131,7 +135,10 @@ describe('OrdersService', () => {
       paymentExpiryMinutes: 60,
       serviceFeeRate: 0.05,
       taxRate: 0.11,
+      webBaseUrl: 'http://localhost:3000',
     };
+
+    mockReceiptMailService = { sendReceipt: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -142,6 +149,7 @@ describe('OrdersService', () => {
         { provide: getRepositoryToken(MomentLicenseEntity), useValue: mockLicenseRepo },
         { provide: MidtransService, useValue: mockMidtransService },
         { provide: AppConfigurationsService, useValue: mockConfigService },
+        { provide: OrderReceiptMailService, useValue: mockReceiptMailService },
       ],
     }).compile();
 
