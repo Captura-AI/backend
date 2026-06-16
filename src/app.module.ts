@@ -21,6 +21,7 @@ import { MomentsModule } from './modules/moments/moments.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PhotographersModule } from './modules/photographers/photographers.module';
 import { PlateModule } from './modules/plate/plate.module';
+import { SavedModule } from './modules/saved/saved.module';
 import { UsersModule } from './modules/users/users.module';
 
 // NestJS Libraries
@@ -63,6 +64,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     OrdersModule,
     PhotographersModule,
     PlateModule,
+    SavedModule,
     UsersModule,
   ],
   providers: [
