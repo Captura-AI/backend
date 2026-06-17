@@ -38,23 +38,22 @@ services:
       - app_network
 
   postgres:
-    image: postgres:16.4-alpine
+    # pgvector image is required: migrations run `CREATE EXTENSION vector`
+    # (alongside pg_trgm and fuzzystrmatch) for hybrid + fuzzy plate search.
+    image: pgvector/pgvector:pg16
     container_name: nestjs_postgres
     restart: unless-stopped
     ports:
       - '${DATABASE_PORT:-5432}:5432'
     environment:
-      POSTGRES_DB: ${DATABASE_NAME:-nestjs_starter_kit}
+      POSTGRES_DB: ${DATABASE_NAME:-captura_ai}
       POSTGRES_USER: ${DATABASE_USER:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test:
-        [
-          'CMD-SHELL',
-          'pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-nestjs_starter_kit}',
-        ]
+        ['CMD-SHELL', 'pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-captura_ai}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -76,8 +75,50 @@ services:
     networks:
       - app_network
 
+  # S3-compatible object storage for local development (mirrors the NAS/MinIO
+  # tier in ARCHITECTURE.md). NOTE: the backend currently writes uploads to
+  # local disk — wiring the S3 client is Phase 16. MinIO is provided here so
+  # the dev runtime is storage-ready ahead of that work.
+  minio:
+    image: minio/minio:latest
+    container_name: captura_minio
+    restart: unless-stopped
+    ports:
+      - '${MINIO_API_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - app_network
+
+  # One-shot job: waits for MinIO, then creates the buckets the platform uses.
+  minio-createbuckets:
+    image: minio/mc:latest
+    container_name: captura_minio_createbuckets
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin123}; do
+        echo 'waiting for minio...'; sleep 2;
+      done;
+      /usr/bin/mc mb -p local/captura-originals;
+      /usr/bin/mc mb -p local/captura-derivatives;
+      /usr/bin/mc mb -p local/captura-private;
+      /usr/bin/mc anonymous set download local/captura-originals;
+      /usr/bin/mc anonymous set download local/captura-derivatives;
+      exit 0;
+      "
+    networks:
+      - app_network
+
 volumes:
   postgres_data:
+  minio_data:
 
 networks:
   app_network:
