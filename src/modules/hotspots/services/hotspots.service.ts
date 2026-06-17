@@ -190,7 +190,12 @@ export class HotspotsService {
       .where(SOFT_DELETE_FILTER)
       .andWhere('moments.image_url IS NOT NULL')
       .andWhere(this._keywordMatchSql(), { keywords })
-      .orderBy('COALESCE(moments.captured_at, moments.created_at)', 'DESC')
+      // Order by entity property paths (not raw SQL): TypeORM resolves orderBy
+      // targets to column metadata when paginating (take), and a raw COALESCE
+      // expression is not resolvable. NULLS LAST + createdAt fallback preserves
+      // the original "captured_at, else created_at, newest first" intent.
+      .orderBy('moments.capturedAt', 'DESC', 'NULLS LAST')
+      .addOrderBy('moments.createdAt', 'DESC', 'NULLS LAST')
       .take(limit)
       .getMany();
   }
