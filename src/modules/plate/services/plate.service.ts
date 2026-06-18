@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { AppConfigurationsService } from '../../../configurations/app/app-configuration.service';
+import { PlateConfirmDto, PlateConfirmResponseDto } from '../dtos/plate-confirm.dto';
 import { PlateScanResponseDto } from '../dtos/plate-scan.dto';
 
 interface IAiMotorDetection {
@@ -20,9 +21,19 @@ interface IAiPlateScanResult {
   plates: string[];
   confidence: number | null;
   motors: IAiMotorDetection[];
+  saved_photo: string | null;
   saved_result_photo: string | null;
   error: string | null;
 }
+
+interface IAiPlateConfirmResult {
+  uploader_id: string;
+  action: string;
+  success: boolean;
+  message: string;
+}
+
+const AI_SERVICE_UNAVAILABLE_MESSAGE = 'AI service is unavailable';
 
 interface IAiPlateExtractResult {
   plates: string[];
@@ -71,7 +82,7 @@ export class PlateService {
 
       scanResult = (await res.json()) as IAiPlateScanResult;
     } catch (err) {
-      throw new ServiceUnavailableException('AI service is unavailable', {
+      throw new ServiceUnavailableException(AI_SERVICE_UNAVAILABLE_MESSAGE, {
         cause: err instanceof Error ? err : new Error(String(err)),
       });
     }
@@ -104,7 +115,48 @@ export class PlateService {
         plateConfidence: motor.plate_confidence ?? null,
       })),
       annotatedImage,
+      savedPhoto: scanResult.saved_photo ?? null,
+      savedResultPhoto: scanResult.saved_result_photo ?? null,
       error: scanResult.error ?? null,
+    };
+  }
+
+  /**
+   * Confirm a previous /plate/scan: keep ('save') or delete ('discard') the
+   * scanned files and their DB records. Proxies to the AI /plate/confirm.
+   */
+  public async confirm(dto: PlateConfirmDto): Promise<PlateConfirmResponseDto> {
+    const baseUrl = this._appConfig.aiServiceUrl;
+
+    let result: IAiPlateConfirmResult;
+    try {
+      const res = await fetch(`${baseUrl}/plate/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploader_id: dto.uploaderId,
+          action: dto.action,
+          saved_photo_filename: dto.savedPhotoFilename ?? null,
+          saved_result_photo_filename: dto.savedResultPhotoFilename ?? null,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`AI service responded with status ${res.status}`);
+      }
+
+      result = (await res.json()) as IAiPlateConfirmResult;
+    } catch (err) {
+      throw new ServiceUnavailableException(AI_SERVICE_UNAVAILABLE_MESSAGE, {
+        cause: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+
+    return {
+      uploaderId: result.uploader_id,
+      action: result.action,
+      success: result.success,
+      message: result.message,
     };
   }
 
@@ -132,7 +184,7 @@ export class PlateService {
 
       result = (await res.json()) as IAiPlateExtractResult;
     } catch (err) {
-      throw new ServiceUnavailableException('AI service is unavailable', {
+      throw new ServiceUnavailableException(AI_SERVICE_UNAVAILABLE_MESSAGE, {
         cause: err instanceof Error ? err : new Error(String(err)),
       });
     }

@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  Body,
   Controller,
+  HttpCode,
   Post,
   Query,
   UploadedFile,
@@ -9,6 +11,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+import { PlateConfirmDto, PlateConfirmResponseDto } from '../dtos/plate-confirm.dto';
 import { PlateScanResponseDto } from '../dtos/plate-scan.dto';
 import { PlateService } from '../services/plate.service';
 
@@ -44,5 +47,16 @@ export class PlateController {
     const result = await this._plateService.scan(uploaderId.trim(), file);
 
     return { message: 'Plate scan completed.', result };
+  }
+
+  @Post('confirm')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Save or discard a previous plate scan via AI service' })
+  public async confirm(
+    @Body() body: PlateConfirmDto,
+  ): Promise<{ message: string; result: PlateConfirmResponseDto }> {
+    const result = await this._plateService.confirm(body);
+
+    return { message: 'Plate scan confirmation completed.', result };
   }
 }
