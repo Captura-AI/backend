@@ -42,6 +42,16 @@ export class PlateScanResponseDto {
   @ApiPropertyOptional({ description: 'Base64-encoded annotated JPEG (data URI)' })
   public annotatedImage!: string | null;
 
+  @ApiPropertyOptional({
+    description: 'Saved original photo filename — pass to /plate/confirm to discard',
+  })
+  public savedPhoto!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Saved annotated photo filename — pass to /plate/confirm to discard',
+  })
+  public savedResultPhoto!: string | null;
+
   @ApiPropertyOptional({ example: 'No plate text detected.' })
   public error!: string | null;
 }
