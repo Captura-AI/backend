@@ -17,11 +17,14 @@ import type {
 // Entities
 import { MomentEntity } from '../../moments/entities/moments.entity';
 import { MomentLicenseEntity } from '../../moments/entities/moment-license.entity';
+import { OrderEntity } from '../../orders/entities/order.entity';
 import { PhotographerProfileEntity } from '../entities/photographer-profile.entity';
 import { PhotographerReviewEntity } from '../entities/photographer-review.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
 
 // Enums
+import { OrderStatusEnum } from '../../orders/enums/order-status.enum';
+import { PhotographerApprovalStatusEnum } from '../enums/photographer-approval-status.enum';
 import { UserRoleEnum } from '../../users/enums/user-role.enum';
 
 // NestJS Libraries
@@ -49,11 +52,15 @@ export interface IMyMomentsResult {
   total: number;
 }
 
+const PHOTOGRAPHER_REVENUE_SHARE = 0.7;
+
 @Injectable()
 export class PhotographersService {
   constructor(
     @InjectRepository(MomentEntity)
     private readonly _momentRepository: Repository<MomentEntity>,
+    @InjectRepository(OrderEntity)
+    private readonly _orderRepository: Repository<OrderEntity>,
     @InjectRepository(PhotographerProfileEntity)
     private readonly _photographerProfileRepository: Repository<PhotographerProfileEntity>,
     private readonly _aiAnalysisService: AiAnalysisService,
@@ -84,8 +91,9 @@ export class PhotographersService {
         const profile = new PhotographerProfileEntity();
 
         profile.artistName = dto.artistName;
+        profile.approvalStatus = PhotographerApprovalStatusEnum.PENDING;
         profile.bio = dto.bio ?? null;
-        profile.isApproved = true;
+        profile.isApproved = false;
         profile.joinedAsPhotographerAt = Math.floor(Date.now() / 1000);
         profile.location = dto.location ?? null;
         profile.slug = slug;
@@ -135,8 +143,8 @@ export class PhotographersService {
     const limit = dto.limit ?? 12;
     const offset = dto.offset ?? 1;
     const where = {
+      approvalStatus: PhotographerApprovalStatusEnum.APPROVED,
       deletedAt: IsNull(),
-      isApproved: true,
       ...(dto.location ? { location: ILike(`%${dto.location}%`) } : {}),
     };
 
@@ -162,7 +170,7 @@ export class PhotographersService {
   public async findPublicDetailBySlug(slug: string): Promise<IPublicPhotographerDetail> {
     const profile = await this._photographerProfileRepository.findOne({
       relations: { packages: true, reviews: true, user: true },
-      where: { deletedAt: IsNull(), isApproved: true, slug },
+      where: { approvalStatus: PhotographerApprovalStatusEnum.APPROVED, deletedAt: IsNull(), slug },
     });
 
     if (!profile) {
@@ -386,6 +394,96 @@ export class PhotographersService {
       { id: momentId },
       { deletedAt: Math.floor(Date.now() / 1000) },
     );
+  }
+
+  /**
+   * @description Approve a photographer profile (admin only)
+   */
+  public async approve(profileId: string): Promise<PhotographerProfileEntity> {
+    const profile = await this.findById(profileId);
+
+    profile.approvalStatus = PhotographerApprovalStatusEnum.APPROVED;
+    profile.isApproved = true;
+
+    return this._photographerProfileRepository.save(profile);
+  }
+
+  /**
+   * @description Reject a photographer profile (admin only)
+   */
+  public async reject(profileId: string): Promise<PhotographerProfileEntity> {
+    const profile = await this.findById(profileId);
+
+    profile.approvalStatus = PhotographerApprovalStatusEnum.REJECTED;
+    profile.isApproved = false;
+
+    return this._photographerProfileRepository.save(profile);
+  }
+
+  /**
+   * @description Earnings summary for the authenticated photographer
+   */
+  public async getEarningsSummary(userId: string): Promise<{
+    currency: string;
+    orderCount: number;
+    photographerShare: number;
+    platformFee: number;
+    totalRevenue: number;
+  }> {
+    const profile = await this._photographerProfileRepository.findOne({ where: { userId } });
+
+    if (!profile) {
+      throw new NotFoundException('Photographer profile not found.');
+    }
+
+    const result = await this._orderRepository
+      .createQueryBuilder('order')
+      .innerJoin('order.moment', 'moment')
+      .where('moment.photographer_profile_id = :profileId', { profileId: profile.id })
+      .andWhere('order.status = :status', { status: OrderStatusEnum.PAID })
+      .select('COUNT(order.id)', 'orderCount')
+      .addSelect('COALESCE(SUM(CAST(order.subtotal_amount AS numeric)), 0)', 'totalRevenue')
+      .getRawOne<{ orderCount: string; totalRevenue: string }>();
+
+    const totalRevenue = Number(result?.totalRevenue ?? 0);
+    const orderCount = Number(result?.orderCount ?? 0);
+
+    return {
+      currency: 'IDR',
+      orderCount,
+      photographerShare: Math.round(totalRevenue * PHOTOGRAPHER_REVENUE_SHARE),
+      platformFee: Math.round(totalRevenue * (1 - PHOTOGRAPHER_REVENUE_SHARE)),
+      totalRevenue,
+    };
+  }
+
+  /**
+   * @description Paginated earnings history for the authenticated photographer
+   */
+  public async getEarningsHistory(
+    userId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ data: OrderEntity[]; limit: number; offset: number; total: number }> {
+    const profile = await this._photographerProfileRepository.findOne({ where: { userId } });
+
+    if (!profile) {
+      throw new NotFoundException('Photographer profile not found.');
+    }
+
+    const skip = (offset - 1) * limit;
+
+    const [data, total] = await this._orderRepository
+      .createQueryBuilder('order')
+      .innerJoin('order.moment', 'moment')
+      .where('moment.photographer_profile_id = :profileId', { profileId: profile.id })
+      .andWhere('order.status = :status', { status: OrderStatusEnum.PAID })
+      .orderBy('order.created_at', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return { data, limit, offset, total };
   }
 
   /**

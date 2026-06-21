@@ -8,6 +8,7 @@ import { UpdateMomentDto } from '../../moments/dtos/update-moment.dto';
 // Entities
 import { MomentEntity } from '../../moments/entities/moments.entity';
 import { MomentLicenseEntity } from '../../moments/entities/moment-license.entity';
+import { OrderEntity } from '../../orders/entities/order.entity';
 import { PhotographerProfileEntity } from '../entities/photographer-profile.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
 
@@ -81,6 +82,9 @@ describe('PhotographersService', () => {
     findOne: jest.Mock;
     update: jest.Mock;
   };
+  let mockOrderRepo: {
+    createQueryBuilder: jest.Mock;
+  };
   let mockProfileRepo: {
     findAndCount: jest.Mock;
     findOne: jest.Mock;
@@ -99,6 +103,21 @@ describe('PhotographersService', () => {
       find: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
+    };
+
+    mockOrderRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ orderCount: '0', totalRevenue: '0' }),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      }),
     };
 
     mockProfileRepo = {
@@ -121,6 +140,10 @@ describe('PhotographersService', () => {
         {
           provide: getRepositoryToken(MomentEntity),
           useValue: mockMomentRepo,
+        },
+        {
+          provide: getRepositoryToken(OrderEntity),
+          useValue: mockOrderRepo,
         },
         {
           provide: getRepositoryToken(PhotographerProfileEntity),
@@ -268,7 +291,7 @@ describe('PhotographersService', () => {
       expect(mockProfileRepo.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({
           relations: { packages: true, reviews: true, user: true },
-          where: expect.objectContaining({ isApproved: true }),
+          where: expect.objectContaining({ approvalStatus: 'approved' }),
         }),
       );
     });
@@ -289,7 +312,7 @@ describe('PhotographersService', () => {
       expect(result.latestMoments[0]?.licensePlate).toBe('B ***BC');
       expect(mockProfileRepo.findOne).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { deletedAt: expect.anything(), isApproved: true, slug: 'test-artist' },
+          where: { approvalStatus: 'approved', deletedAt: expect.anything(), slug: 'test-artist' },
         }),
       );
     });
