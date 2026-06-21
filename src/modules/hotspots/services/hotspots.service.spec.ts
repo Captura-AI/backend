@@ -61,6 +61,7 @@ const mockMoment = (): MomentEntity => {
 interface IQueryBuilderMock {
   select: jest.Mock;
   addSelect: jest.Mock;
+  addOrderBy: jest.Mock;
   leftJoinAndSelect: jest.Mock;
   where: jest.Mock;
   andWhere: jest.Mock;
@@ -73,6 +74,7 @@ interface IQueryBuilderMock {
 
 const buildIQueryBuilderMock = (): IQueryBuilderMock => {
   const qb = {
+    addOrderBy: jest.fn(),
     addSelect: jest.fn(),
     andWhere: jest.fn(),
     getMany: jest.fn().mockResolvedValue([mockMoment()]),
@@ -91,6 +93,7 @@ const buildIQueryBuilderMock = (): IQueryBuilderMock => {
     where: jest.fn(),
   } as unknown as IQueryBuilderMock;
 
+  qb.addOrderBy.mockReturnValue(qb);
   qb.addSelect.mockReturnValue(qb);
   qb.andWhere.mockReturnValue(qb);
   qb.leftJoinAndSelect.mockReturnValue(qb);

@@ -536,4 +536,130 @@ describe('PhotographersService', () => {
       );
     });
   });
+
+  describe('approve()', () => {
+    it('sets approvalStatus to approved and isApproved to true', async () => {
+      const profile = mockProfile();
+      profile.isApproved = false;
+
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+      mockProfileRepo.save.mockImplementation((p: PhotographerProfileEntity) => Promise.resolve(p));
+
+      const result = await service.approve('profile-uuid-1');
+
+      expect(result.isApproved).toBe(true);
+      expect(result.approvalStatus).toBe('approved');
+    });
+
+    it('throws NotFoundException when profile not found', async () => {
+      mockProfileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.approve('missing-profile')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('reject()', () => {
+    it('sets approvalStatus to rejected and isApproved to false', async () => {
+      const profile = mockProfile();
+      profile.isApproved = true;
+
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+      mockProfileRepo.save.mockImplementation((p: PhotographerProfileEntity) => Promise.resolve(p));
+
+      const result = await service.reject('profile-uuid-1');
+
+      expect(result.isApproved).toBe(false);
+      expect(result.approvalStatus).toBe('rejected');
+    });
+
+    it('throws NotFoundException when profile not found', async () => {
+      mockProfileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.reject('missing-profile')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getEarningsSummary()', () => {
+    it('returns earnings summary with 70/30 photographer/platform split', async () => {
+      const profile = mockProfile();
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ orderCount: '4', totalRevenue: '100000' }),
+      };
+      mockOrderRepo.createQueryBuilder.mockReturnValue(qbMock);
+
+      const result = await service.getEarningsSummary('user-uuid-1');
+
+      expect(result.totalRevenue).toBe(100000);
+      expect(result.photographerShare).toBe(70000);
+      expect(result.platformFee).toBe(30000);
+      expect(result.orderCount).toBe(4);
+      expect(result.currency).toBe('IDR');
+    });
+
+    it('returns zero summary when no paid orders exist', async () => {
+      const profile = mockProfile();
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue(null),
+      };
+      mockOrderRepo.createQueryBuilder.mockReturnValue(qbMock);
+
+      const result = await service.getEarningsSummary('user-uuid-1');
+
+      expect(result.totalRevenue).toBe(0);
+      expect(result.photographerShare).toBe(0);
+      expect(result.orderCount).toBe(0);
+    });
+
+    it('throws NotFoundException when photographer profile not found', async () => {
+      mockProfileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getEarningsSummary('user-uuid-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getEarningsHistory()', () => {
+    it('returns paginated list of paid orders for the photographer', async () => {
+      const profile = mockProfile();
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+      mockOrderRepo.createQueryBuilder.mockReturnValue(qbMock);
+
+      const result = await service.getEarningsHistory('user-uuid-1', 10, 1);
+
+      expect(result.total).toBe(0);
+      expect(result.limit).toBe(10);
+      expect(result.offset).toBe(1);
+    });
+
+    it('throws NotFoundException when photographer profile not found', async () => {
+      mockProfileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getEarningsHistory('user-uuid-1', 10, 1)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
 });
