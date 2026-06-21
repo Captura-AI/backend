@@ -192,7 +192,7 @@ describe('MomentsService', () => {
         'plate_match_score',
       );
       expect(qb.orderBy).toHaveBeenCalledWith('plate_match_score', 'DESC');
-      expect(qb.addOrderBy).toHaveBeenCalledWith('moments.captured_at', 'DESC');
+      expect(qb.addOrderBy).toHaveBeenCalledWith('moments.capturedAt', 'DESC');
     });
 
     it('keeps short licensePlate queries on exact or partial matching only', async () => {
