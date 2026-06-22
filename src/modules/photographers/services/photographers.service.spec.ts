@@ -428,6 +428,71 @@ describe('PhotographersService', () => {
       expect(result.data).toEqual([]);
       expect(result.total).toBe(0);
     });
+
+    it('passes Between filter when both startDate and endDate are provided', async () => {
+      mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      const dto = new ListMyMomentsDto();
+      dto.startDate = 1750521600;
+      dto.endDate = 1750607999;
+
+      await service.findMyMoments('user-uuid-1', dto);
+
+      expect(mockMomentRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            capturedAt: expect.objectContaining({ _type: 'between' }),
+          }),
+        }),
+      );
+    });
+
+    it('passes MoreThanOrEqual filter when only startDate is provided', async () => {
+      mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      const dto = new ListMyMomentsDto();
+      dto.startDate = 1750521600;
+
+      await service.findMyMoments('user-uuid-1', dto);
+
+      expect(mockMomentRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            capturedAt: expect.objectContaining({ _type: 'moreThanOrEqual' }),
+          }),
+        }),
+      );
+    });
+
+    it('passes LessThanOrEqual filter when only endDate is provided', async () => {
+      mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      const dto = new ListMyMomentsDto();
+      dto.endDate = 1750607999;
+
+      await service.findMyMoments('user-uuid-1', dto);
+
+      expect(mockMomentRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            capturedAt: expect.objectContaining({ _type: 'lessThanOrEqual' }),
+          }),
+        }),
+      );
+    });
+
+    it('omits capturedAt filter when no date range is provided', async () => {
+      mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      const dto = new ListMyMomentsDto();
+
+      await service.findMyMoments('user-uuid-1', dto);
+
+      const call = mockMomentRepo.findAndCount.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(call.where).not.toHaveProperty('capturedAt');
+    });
   });
 
   describe('findMyMomentById()', () => {
