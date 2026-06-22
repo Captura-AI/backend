@@ -30,13 +30,23 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
+// Queue
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
+import {
+  AI_ANALYSIS_JOB,
+  AI_ANALYSIS_JOB_OPTIONS,
+  AI_ANALYSIS_QUEUE,
+  IAiAnalysisJob,
+} from '../../moments/queues/ai-analysis.queue';
+
 // Services
 import { PlateService } from '../../plate/services/plate.service';
-import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { UsersService } from '../../users/services/users.service';
 
 // TypeORM
@@ -51,12 +61,15 @@ export interface IMyMomentsResult {
 
 @Injectable()
 export class PhotographersService {
+  private readonly _logger = new Logger(PhotographersService.name);
+
   constructor(
     @InjectRepository(MomentEntity)
     private readonly _momentRepository: Repository<MomentEntity>,
     @InjectRepository(PhotographerProfileEntity)
     private readonly _photographerProfileRepository: Repository<PhotographerProfileEntity>,
-    private readonly _aiAnalysisService: AiAnalysisService,
+    @InjectQueue(AI_ANALYSIS_QUEUE)
+    private readonly _aiAnalysisQueue: Queue<IAiAnalysisJob>,
     private readonly _dataSource: DataSource,
     private readonly _plateService: PlateService,
     private readonly _usersService: UsersService,
@@ -275,11 +288,17 @@ export class PhotographersService {
   }
 
   /**
-   * @description Trigger AI analysis for a moment — fire-and-forget, does not block the response
+   * @description Enqueue AI analysis for a moment. Returns immediately — the
+   * Redis-backed queue throttles processing so bulk uploads can't overload the
+   * model service. Enqueue failures are logged, never blocking the upload.
    */
   public triggerAiAnalysis(momentId: string, imageUrl: string | null): void {
     if (!imageUrl) return;
-    void this._aiAnalysisService.analyzeMoment(momentId, imageUrl);
+    void this._aiAnalysisQueue
+      .add(AI_ANALYSIS_JOB, { imageUrl, momentId }, AI_ANALYSIS_JOB_OPTIONS)
+      .catch((err: unknown) => {
+        this._logger.warn(`Failed to enqueue AI analysis for moment ${momentId}: ${err}`);
+      });
   }
 
   /**

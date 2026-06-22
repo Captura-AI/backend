@@ -25,8 +25,15 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 
+// Queue
+import { getQueueToken } from '@nestjs/bullmq';
+import {
+  AI_ANALYSIS_JOB,
+  AI_ANALYSIS_JOB_OPTIONS,
+  AI_ANALYSIS_QUEUE,
+} from '../../moments/queues/ai-analysis.queue';
+
 // Services
-import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { PlateService } from '../../plate/services/plate.service';
 import { PhotographersService } from './photographers.service';
 import { UsersService } from '../../users/services/users.service';
@@ -92,6 +99,9 @@ describe('PhotographersService', () => {
   let mockDataSource: {
     transaction: jest.Mock;
   };
+  let mockAiAnalysisQueue: {
+    add: jest.Mock;
+  };
 
   beforeEach(async () => {
     mockMomentRepo = {
@@ -115,6 +125,10 @@ describe('PhotographersService', () => {
       transaction: jest.fn(),
     };
 
+    mockAiAnalysisQueue = {
+      add: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PhotographersService,
@@ -135,8 +149,8 @@ describe('PhotographersService', () => {
           useValue: mockDataSource,
         },
         {
-          provide: AiAnalysisService,
-          useValue: { analyzeMoment: jest.fn().mockResolvedValue(undefined) },
+          provide: getQueueToken(AI_ANALYSIS_QUEUE),
+          useValue: mockAiAnalysisQueue,
         },
         {
           provide: PlateService,
@@ -151,6 +165,25 @@ describe('PhotographersService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('triggerAiAnalysis()', () => {
+    it('enqueues an analysis job with the moment id, image url, and retry options', () => {
+      service.triggerAiAnalysis('moment-uuid-1', 'uploads/moments/photo.jpg');
+
+      expect(mockAiAnalysisQueue.add).toHaveBeenCalledTimes(1);
+      expect(mockAiAnalysisQueue.add).toHaveBeenCalledWith(
+        AI_ANALYSIS_JOB,
+        { imageUrl: 'uploads/moments/photo.jpg', momentId: 'moment-uuid-1' },
+        AI_ANALYSIS_JOB_OPTIONS,
+      );
+    });
+
+    it('does not enqueue when the image url is missing', () => {
+      service.triggerAiAnalysis('moment-uuid-1', null);
+
+      expect(mockAiAnalysisQueue.add).not.toHaveBeenCalled();
+    });
   });
 
   describe('onboard()', () => {

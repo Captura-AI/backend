@@ -60,6 +60,16 @@ export interface IPlateExtractResult {
 export class PlateService {
   constructor(private readonly _appConfig: AppConfigurationsService) {}
 
+  /**
+   * Headers for AI-service calls. Adds X-API-Key when configured. `base` is
+   * spread in for JSON calls; multipart calls pass nothing so fetch can set the
+   * multipart boundary Content-Type itself.
+   */
+  private _aiHeaders(base: Record<string, string> = {}): Record<string, string> {
+    const apiKey = this._appConfig.aiServiceApiKey;
+    return apiKey ? { ...base, 'X-API-Key': apiKey } : { ...base };
+  }
+
   public async scan(uploaderId: string, file: Express.Multer.File): Promise<PlateScanResponseDto> {
     const baseUrl = this._appConfig.aiServiceUrl;
 
@@ -73,6 +83,7 @@ export class PlateService {
         {
           method: 'POST',
           body: formData,
+          headers: this._aiHeaders(),
         },
       );
 
@@ -92,6 +103,7 @@ export class PlateService {
       try {
         const imgRes = await fetch(
           `${baseUrl}/plate/result/${encodeURIComponent(scanResult.saved_result_photo)}`,
+          { headers: this._aiHeaders() },
         );
         if (imgRes.ok) {
           const buffer = await imgRes.arrayBuffer();
@@ -132,7 +144,7 @@ export class PlateService {
     try {
       const res = await fetch(`${baseUrl}/plate/confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this._aiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           uploader_id: dto.uploaderId,
           action: dto.action,
@@ -176,6 +188,7 @@ export class PlateService {
       const res = await fetch(`${baseUrl}/plate/extract`, {
         method: 'POST',
         body: formData,
+        headers: this._aiHeaders(),
       });
 
       if (!res.ok) {

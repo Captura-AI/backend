@@ -14,6 +14,11 @@ import { PlateModule } from '../plate/plate.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+// Queue
+import { BullModule } from '@nestjs/bullmq';
+import { AI_ANALYSIS_QUEUE } from './queues/ai-analysis.queue';
+import { AiAnalysisProcessor } from './queues/ai-analysis.processor';
+
 // Services
 import { AiAnalysisService } from './services/ai-analysis.service';
 import { MomentsService } from './services/moments.service';
@@ -23,9 +28,10 @@ import { MomentsService } from './services/moments.service';
   exports: [MomentsService],
   imports: [
     TypeOrmModule.forFeature([MomentCollaboratorEntity, MomentEntity, MomentLicenseEntity]),
+    BullModule.registerQueue({ name: AI_ANALYSIS_QUEUE }),
     AppConfigurationModule,
     PlateModule,
   ],
-  providers: [AiAnalysisService, MomentsService],
+  providers: [AiAnalysisProcessor, AiAnalysisService, MomentsService],
 })
 export class MomentsModule {}
