@@ -197,6 +197,19 @@ export class PhotographersController {
     };
   }
 
+  @Post('moments/:id/retry-analysis')
+  @HttpCode(202)
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Retry AI analysis for a failed moment owned by the authenticated photographer',
+  })
+  public async retryMomentAnalysis(@CurrentUser() user: IRequestUser, @Param() params: ParamIdDto) {
+    await this._photographersService.retryMomentAnalysis(user.id, params.id);
+
+    return { message: 'AI analysis re-queued' };
+  }
+
   @Patch(MOMENT_ID_ROUTE)
   @UseGuards(PhotographerRoleGuard)
   @ApiBearerAuth()

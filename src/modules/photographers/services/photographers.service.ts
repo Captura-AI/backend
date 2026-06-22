@@ -43,7 +43,17 @@ import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { UsersService } from '../../users/services/users.service';
 
 // TypeORM
-import { DataSource, EntityManager, ILike, IsNull, Repository } from 'typeorm';
+import {
+  Between,
+  DataSource,
+  EntityManager,
+  FindOperator,
+  ILike,
+  IsNull,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 
 export interface IMyMomentsResult {
   data: MomentEntity[];
@@ -291,17 +301,54 @@ export class PhotographersService {
   }
 
   /**
-   * @description List paginated moments owned by the authenticated photographer
+   * @description Reset aiAnalysis and re-trigger AI analysis for a moment owned by the user
+   */
+  public async retryMomentAnalysis(userId: string, momentId: string): Promise<void> {
+    const moment = await this._momentRepository.findOne({
+      where: { id: momentId, photographerId: userId, deletedAt: IsNull() },
+    });
+
+    if (!moment) {
+      throw new NotFoundException('Moment not found');
+    }
+
+    await this._momentRepository.update(moment.id, { aiAnalysis: null });
+    this.triggerAiAnalysis(moment.id, moment.imageUrl);
+  }
+
+  /**
+   * @description Build a TypeORM operator that filters capturedAt by date range.
+   * Returns undefined when no range bounds are provided (no filter applied).
+   */
+  private _buildCapturedAtFilter(
+    startDate?: number,
+    endDate?: number,
+  ): FindOperator<number> | undefined {
+    if (startDate !== undefined && endDate !== undefined) return Between(startDate, endDate);
+    if (startDate !== undefined) return MoreThanOrEqual(startDate);
+    if (endDate !== undefined) return LessThanOrEqual(endDate);
+
+    return undefined;
+  }
+
+  /**
+   * @description List paginated moments owned by the authenticated photographer.
+   * Supports optional capturedAt date range via startDate / endDate (Unix seconds UTC).
    */
   public async findMyMoments(userId: string, dto: ListMyMomentsDto): Promise<IMyMomentsResult> {
     const limit = dto.limit ?? 10;
     const offset = dto.offset ?? 1;
+    const capturedAtFilter = this._buildCapturedAtFilter(dto.startDate, dto.endDate);
 
     const [data, total] = await this._momentRepository.findAndCount({
       order: { createdAt: 'DESC' },
       skip: dto.skip,
       take: limit,
-      where: { deletedAt: IsNull(), photographerId: userId },
+      where: {
+        deletedAt: IsNull(),
+        photographerId: userId,
+        ...(capturedAtFilter !== undefined ? { capturedAt: capturedAtFilter } : {}),
+      },
     });
 
     return { data, limit, offset, total };
