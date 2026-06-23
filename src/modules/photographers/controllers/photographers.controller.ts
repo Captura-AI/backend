@@ -133,6 +133,11 @@ export class PhotographersController {
       required: ['caption'],
       properties: {
         caption: { type: 'string' },
+        autoApprove: {
+          type: 'boolean',
+          default: true,
+          description: 'Auto-keep AI plate scan results (default true).',
+        },
         cameraInfo: { type: 'string' },
         capturedAt: { type: 'number' },
         city: { type: 'string' },

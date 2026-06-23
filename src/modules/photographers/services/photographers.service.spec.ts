@@ -106,6 +106,11 @@ describe('PhotographersService', () => {
   let mockAiAnalysisQueue: {
     add: jest.Mock;
   };
+  let mockPlateService: {
+    searchByPlate: jest.Mock;
+    scan: jest.Mock;
+    confirm: jest.Mock;
+  };
 
   beforeEach(async () => {
     mockMomentRepo = {
@@ -148,6 +153,12 @@ describe('PhotographersService', () => {
       add: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockPlateService = {
+      searchByPlate: jest.fn(),
+      scan: jest.fn(),
+      confirm: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PhotographersService,
@@ -177,7 +188,7 @@ describe('PhotographersService', () => {
         },
         {
           provide: PlateService,
-          useValue: { searchByPlate: jest.fn() },
+          useValue: mockPlateService,
         },
       ],
     }).compile();
@@ -404,6 +415,86 @@ describe('PhotographersService', () => {
 
       expect(result).toEqual(moment);
       expect(saveMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('scans the image and auto-keeps plate/motor/color when autoApprove defaults true', async () => {
+      const profile = mockProfile();
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+
+      const saveMock = jest.fn().mockImplementation((_entity, moment) => Promise.resolve(moment));
+      mockDataSource.transaction.mockImplementation(async (cb: (manager: unknown) => unknown) =>
+        cb({ save: saveMock }),
+      );
+
+      mockPlateService.scan.mockResolvedValue({
+        uploaderId: 'ignored',
+        plates: ['B 1234 XYZ'],
+        confidence: 0.9,
+        motors: [
+          { motorType: 'Sport', motorTypeConfidence: 0.8, color: 'red', colorConfidence: 0.7 },
+        ],
+        annotatedImage: null,
+        savedPhoto: 'orig.jpg',
+        savedResultPhoto: 'annotated.jpg',
+        error: null,
+      });
+
+      const dto = new CreateMomentDto();
+      dto.caption = 'A bike';
+      const imageFile = { path: 'uploads/moments/bike.jpg' } as Express.Multer.File;
+
+      await service.createMoment('user-uuid-1', dto, imageFile);
+
+      // Scan is called with the pre-generated moment id as uploader_id.
+      expect(mockPlateService.scan).toHaveBeenCalledWith(expect.any(String), imageFile);
+      // autoApprove defaults true -> artifacts kept, no discard.
+      expect(mockPlateService.confirm).not.toHaveBeenCalled();
+
+      const saved = saveMock.mock.calls[0][1] as MomentEntity;
+      expect(saved.id).toEqual(expect.any(String));
+      expect(saved.licensePlate).toBe('B 1234 XYZ');
+      expect(saved.motorType).toBe('Sport');
+      expect(saved.color).toBe('red');
+      expect(saved.metadata).toEqual({
+        plateScan: { annotatedPhoto: 'annotated.jpg', autoApproved: true },
+      });
+    });
+
+    it('discards scan artifacts when autoApprove is false but still tags the moment', async () => {
+      const profile = mockProfile();
+      mockProfileRepo.findOne.mockResolvedValue(profile);
+
+      const saveMock = jest.fn().mockImplementation((_entity, moment) => Promise.resolve(moment));
+      mockDataSource.transaction.mockImplementation(async (cb: (manager: unknown) => unknown) =>
+        cb({ save: saveMock }),
+      );
+
+      mockPlateService.scan.mockResolvedValue({
+        uploaderId: 'ignored',
+        plates: ['D 9 AB'],
+        confidence: 0.6,
+        motors: [],
+        annotatedImage: null,
+        savedPhoto: 'orig.jpg',
+        savedResultPhoto: 'annotated.jpg',
+        error: null,
+      });
+
+      const dto = new CreateMomentDto();
+      dto.caption = 'A bike';
+      dto.autoApprove = false;
+      const imageFile = { path: 'uploads/moments/bike.jpg' } as Express.Multer.File;
+
+      await service.createMoment('user-uuid-1', dto, imageFile);
+
+      expect(mockPlateService.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'discard', savedResultPhotoFilename: 'annotated.jpg' }),
+      );
+      const saved = saveMock.mock.calls[0][1] as MomentEntity;
+      expect(saved.licensePlate).toBe('D 9 AB');
+      expect(saved.metadata).toEqual({
+        plateScan: { annotatedPhoto: null, autoApproved: false },
+      });
     });
 
     it('throws ForbiddenException when user is not a photographer', async () => {

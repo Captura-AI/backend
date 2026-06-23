@@ -4,7 +4,7 @@ import { Transform, Type } from 'class-transformer';
 // Class Validators
 import {
   IsArray,
-  IsEnum,
+  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -18,11 +18,68 @@ import {
 // DTOs
 import { CreateMomentLicenseDto } from './create-moment-license.dto';
 
-// Enums
-import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
-
 // NestJS Libraries
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * Coerce a multipart form value into a string[] for lenient uploads: accepts an
+ * actual array, a JSON array string, or a comma-separated list; empty/blank
+ * values become undefined so the optional field validates instead of 400-ing.
+ */
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value as string[];
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed as string[];
+      }
+    } catch {
+      // Not JSON — treat as a comma-separated list.
+    }
+    return trimmed
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return undefined;
+}
+
+/**
+ * Coerce a multipart form value into an object[] for lenient uploads: accepts an
+ * actual array or a JSON array string; anything else (blank, malformed) becomes
+ * undefined so the optional field validates instead of 400-ing.
+ */
+function normalizeObjectArray(value: unknown): unknown {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
 
 export class CreateMomentDto {
   @ApiProperty({ description: 'Short caption for the moment' })
@@ -74,27 +131,24 @@ export class CreateMomentDto {
 
   @ApiPropertyOptional({
     type: String,
-    description: 'JSON string array of tags, e.g. ["urban","night"]',
+    description: 'JSON string array (["urban","night"]) or a comma-separated list. Optional.',
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => {
-    if (typeof value === 'string') {
-      try {
-        return JSON.parse(value) as string[];
-      } catch {
-        return value;
-      }
-    }
-    return value;
-  })
+  @Transform(({ value }: { value: unknown }) => normalizeStringArray(value))
   @IsArray()
   @IsString({ each: true })
   public tags?: string[];
 
-  @ApiPropertyOptional({ enum: VehicleTypeEnum })
+  @ApiPropertyOptional({
+    type: String,
+    description: 'Free-form vehicle type, e.g. "motorcycle". Optional; not restricted to an enum.',
+  })
   @IsOptional()
-  @IsEnum(VehicleTypeEnum)
-  public vehicleType?: VehicleTypeEnum;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
+  @IsString()
+  public vehicleType?: string;
 
   @ApiPropertyOptional({ maxLength: 20 })
   @IsOptional()
@@ -103,21 +157,29 @@ export class CreateMomentDto {
   public licensePlate?: string;
 
   @ApiPropertyOptional({
-    type: String,
+    type: Boolean,
+    default: true,
     description:
-      'JSON string array of license objects, e.g. [{"licenseTypeId":"uuid","price":9.99}]',
+      'Auto-approve the AI plate scan so its results are kept automatically. ' +
+      'When false, the scan artifacts are discarded (the moment is still created). Defaults to true.',
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => {
     if (typeof value === 'string') {
-      try {
-        return JSON.parse(value) as CreateMomentLicenseDto[];
-      } catch {
-        return value;
-      }
+      return value === 'true' || value === '1';
     }
     return value;
   })
+  @IsBoolean()
+  public autoApprove?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    description:
+      'JSON string array of license objects, e.g. [{"licenseTypeId":"uuid","price":9.99}]. Optional.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => normalizeObjectArray(value))
   @ValidateNested({ each: true })
   @Type(() => CreateMomentLicenseDto)
   public licenses?: CreateMomentLicenseDto[];

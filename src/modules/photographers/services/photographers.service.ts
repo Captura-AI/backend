@@ -26,6 +26,7 @@ import { UsersEntity } from '../../users/entities/users.entity';
 import { OrderStatusEnum } from '../../orders/enums/order-status.enum';
 import { PhotographerApprovalStatusEnum } from '../enums/photographer-approval-status.enum';
 import { UserRoleEnum } from '../../users/enums/user-role.enum';
+import { VehicleTypeEnum } from '../../moments/enums/vehicle-type.enum';
 
 // NestJS Libraries
 import {
@@ -64,6 +65,9 @@ import {
   MoreThanOrEqual,
   Repository,
 } from 'typeorm';
+
+// Node
+import { randomUUID } from 'crypto';
 
 export interface IMyMomentsResult {
   data: MomentEntity[];
@@ -244,15 +248,25 @@ export class PhotographersService {
 
     const slug = this._generateMomentSlug(dto.caption);
 
-    // Auto-tag the moment with AI-detected plate / motor type / color so it
-    // becomes searchable. Run outside the DB transaction (network I/O) and stay
-    // fault-tolerant — the upload must still succeed if the AI service is down.
-    const aiAttributes = imageFile ? await this._extractVehicleAttributes(imageFile) : null;
+    // Pre-generate the id so it doubles as the AI scan's uploader_id, keeping the
+    // persisted plate_results keyed to this exact moment.
+    const momentId = randomUUID();
+    const autoApprove = dto.autoApprove ?? true;
+
+    // Auto-tag via the stateful /plate/scan pipeline (persists plate_results +
+    // saves an annotated image), mirroring the plate/scan flow. autoApprove keeps
+    // the scan artifacts; otherwise they are discarded. Runs outside the DB
+    // transaction (network I/O) and stays fault-tolerant — the upload must still
+    // succeed if the AI service is down.
+    const aiAttributes = imageFile
+      ? await this._scanVehicleAttributes(momentId, imageFile, autoApprove)
+      : null;
 
     try {
       return await this._dataSource.transaction(async (manager: EntityManager) => {
         const moment = new MomentEntity();
 
+        moment.id = momentId;
         moment.cameraInfo = dto.cameraInfo ?? null;
         moment.caption = dto.caption;
         moment.capturedAt = dto.capturedAt ?? null;
@@ -270,7 +284,13 @@ export class PhotographersService {
         moment.slug = slug;
         moment.story = dto.story ?? null;
         moment.tags = dto.tags ?? null;
-        moment.vehicleType = dto.vehicleType ?? null;
+        moment.vehicleType = this._normalizeVehicleType(dto.vehicleType);
+        // Keep a reference to the kept annotated scan image (null when discarded).
+        moment.metadata = aiAttributes
+          ? {
+              plateScan: { annotatedPhoto: aiAttributes.annotatedPhoto, autoApproved: autoApprove },
+            }
+          : null;
 
         const savedMoment = await manager.save(MomentEntity, moment);
 
@@ -411,7 +431,8 @@ export class PhotographersService {
         if (dto.longitude !== undefined) moment.longitude = dto.longitude ?? null;
         if (dto.story !== undefined) moment.story = dto.story ?? null;
         if (dto.tags !== undefined) moment.tags = dto.tags ?? null;
-        if (dto.vehicleType !== undefined) moment.vehicleType = dto.vehicleType ?? null;
+        if (dto.vehicleType !== undefined)
+          moment.vehicleType = this._normalizeVehicleType(dto.vehicleType);
 
         const updatedMoment = await manager.save(MomentEntity, moment);
 
@@ -557,20 +578,58 @@ export class PhotographersService {
    * AI service. Never throws — returns nulls if extraction fails so uploads are
    * resilient to the AI service being unavailable.
    */
-  private async _extractVehicleAttributes(
+  /**
+   * Map a free-form vehicle type string onto the enum the column stores. The
+   * upload accepts any string, but the DB column is constrained, so an unknown
+   * value falls back to OTHER (and blank/missing -> null) instead of erroring.
+   */
+  private _normalizeVehicleType(value?: string | null): VehicleTypeEnum | null {
+    if (!value?.trim()) {
+      return null;
+    }
+    const normalized = value.trim().toLowerCase();
+    const match = Object.values(VehicleTypeEnum).find((type) => type === normalized);
+    return match ?? VehicleTypeEnum.OTHER;
+  }
+
+  /**
+   * Run the stateful /plate/scan pipeline for an uploaded moment image and
+   * return the dominant plate / motor type / color. When `autoApprove` is false
+   * the scan's persisted artifacts (annotated image + plate_results) are
+   * discarded, but the readings are still returned so the moment can be tagged.
+   * Fully fault-tolerant: any AI failure yields null attributes.
+   */
+  private async _scanVehicleAttributes(
+    uploaderId: string,
     imageFile: Express.Multer.File,
-  ): Promise<{ plate: string | null; motorType: string | null; color: string | null }> {
+    autoApprove: boolean,
+  ): Promise<{
+    plate: string | null;
+    motorType: string | null;
+    color: string | null;
+    annotatedPhoto: string | null;
+  }> {
     try {
-      const extracted = await this._plateService.extract(imageFile);
-      const dominantMotor = extracted.motors[0] ?? null;
+      const scan = await this._plateService.scan(uploaderId, imageFile);
+      const dominantMotor = scan.motors[0] ?? null;
+
+      if (!autoApprove) {
+        await this._plateService.confirm({
+          uploaderId,
+          action: 'discard',
+          savedPhotoFilename: scan.savedPhoto ?? undefined,
+          savedResultPhotoFilename: scan.savedResultPhoto ?? undefined,
+        });
+      }
 
       return {
         color: dominantMotor?.color ?? null,
         motorType: dominantMotor?.motorType ?? null,
-        plate: extracted.plates[0] ?? null,
+        plate: scan.plates[0] ?? null,
+        annotatedPhoto: autoApprove ? (scan.savedResultPhoto ?? null) : null,
       };
     } catch {
-      return { color: null, motorType: null, plate: null };
+      return { color: null, motorType: null, plate: null, annotatedPhoto: null };
     }
   }
 
