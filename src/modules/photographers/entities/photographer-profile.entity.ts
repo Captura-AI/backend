@@ -4,6 +4,9 @@ import { PhotographerReviewEntity } from './photographer-review.entity';
 import { AppBaseEntity } from '../../../common/entities/base.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
 
+// Enums
+import { PhotographerApprovalStatusEnum } from '../enums/photographer-approval-status.enum';
+
 // NestJS Libraries
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -40,9 +43,21 @@ export class PhotographerProfileEntity extends AppBaseEntity {
   @Column({ name: 'joined_as_photographer_at', type: 'bigint' })
   public joinedAsPhotographerAt!: number;
 
-  @ApiProperty({ default: true })
-  @Column({ name: 'is_approved', type: 'boolean', default: true })
+  @ApiProperty({ default: false })
+  @Column({ name: 'is_approved', type: 'boolean', default: false })
   public isApproved!: boolean;
+
+  @ApiProperty({
+    enum: PhotographerApprovalStatusEnum,
+    default: PhotographerApprovalStatusEnum.PENDING,
+  })
+  @Column({
+    name: 'approval_status',
+    type: 'varchar',
+    length: 20,
+    default: PhotographerApprovalStatusEnum.PENDING,
+  })
+  public approvalStatus!: PhotographerApprovalStatusEnum;
 
   @OneToMany(() => PhotographerPackageEntity, (item) => item.photographerProfile, {
     eager: false,

@@ -1,6 +1,7 @@
 // Entities
 import { MomentEntity } from '../moments/entities/moments.entity';
 import { MomentLicenseEntity } from '../moments/entities/moment-license.entity';
+import { OrderEntity } from '../orders/entities/order.entity';
 import { PhotographerPackageEntity } from './entities/photographer-package.entity';
 import { PhotographerProfileEntity } from './entities/photographer-profile.entity';
 import { PhotographerReviewEntity } from './entities/photographer-review.entity';
@@ -57,6 +58,7 @@ const momentFileFilter = (
     TypeOrmModule.forFeature([
       MomentEntity,
       MomentLicenseEntity,
+      OrderEntity,
       PhotographerPackageEntity,
       PhotographerProfileEntity,
       PhotographerReviewEntity,

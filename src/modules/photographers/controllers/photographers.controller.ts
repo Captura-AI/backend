@@ -15,6 +15,7 @@ import { MomentEntity } from '../../moments/entities/moments.entity';
 import { PhotographerProfileEntity } from '../entities/photographer-profile.entity';
 
 // Guards
+import { AdminRoleGuard } from '../../../common/guards/admin-role.guard';
 import { AuthenticationJWTGuard } from '../../../common/guards/authentication-jwt.guard';
 import { PhotographerRoleGuard } from '../../../common/guards/photographer-role.guard';
 
@@ -79,6 +80,40 @@ export class PhotographersController {
 
     return {
       message: 'Successfully onboarded as photographer',
+      result,
+    };
+  }
+
+  @Get('me/earnings')
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get earnings summary for the authenticated photographer' })
+  public async getEarningsSummary(@CurrentUser() user: IRequestUser) {
+    const result = await this._photographersService.getEarningsSummary(user.id);
+
+    return {
+      message: 'Earnings summary retrieved successfully',
+      result,
+    };
+  }
+
+  @Get('me/earnings/history')
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get paginated earnings history for the authenticated photographer' })
+  public async getEarningsHistory(
+    @CurrentUser() user: IRequestUser,
+    @Query('limit') limit = 10,
+    @Query('offset') offset = 1,
+  ) {
+    const result = await this._photographersService.getEarningsHistory(
+      user.id,
+      Number(limit),
+      Number(offset),
+    );
+
+    return {
+      message: 'Earnings history retrieved successfully',
       result,
     };
   }
@@ -162,6 +197,19 @@ export class PhotographersController {
     };
   }
 
+  @Post('moments/:id/retry-analysis')
+  @HttpCode(202)
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Retry AI analysis for a failed moment owned by the authenticated photographer',
+  })
+  public async retryMomentAnalysis(@CurrentUser() user: IRequestUser, @Param() params: ParamIdDto) {
+    await this._photographersService.retryMomentAnalysis(user.id, params.id);
+
+    return { message: 'AI analysis re-queued' };
+  }
+
   @Patch(MOMENT_ID_ROUTE)
   @UseGuards(PhotographerRoleGuard)
   @ApiBearerAuth()
@@ -200,6 +248,36 @@ export class PhotographersController {
 
     return {
       message: 'Photographer profile retrieved successfully',
+      result,
+    };
+  }
+
+  @Patch(':id/approve')
+  @HttpCode(200)
+  @UseGuards(AdminRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Approve a photographer profile (admin only)' })
+  @ApiBaseResponse(PhotographerProfileEntity)
+  public async approvePhotographer(@Param() params: ParamIdDto) {
+    const result = await this._photographersService.approve(params.id);
+
+    return {
+      message: 'Photographer profile approved',
+      result,
+    };
+  }
+
+  @Patch(':id/reject')
+  @HttpCode(200)
+  @UseGuards(AdminRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reject a photographer profile (admin only)' })
+  @ApiBaseResponse(PhotographerProfileEntity)
+  public async rejectPhotographer(@Param() params: ParamIdDto) {
+    const result = await this._photographersService.reject(params.id);
+
+    return {
+      message: 'Photographer profile rejected',
       result,
     };
   }

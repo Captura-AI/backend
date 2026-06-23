@@ -55,6 +55,7 @@ const mockRequestUser = (): IRequestUser => ({
 describe('PhotographersController', () => {
   let controller: PhotographersController;
   let mockPhotographersService: {
+    approve: jest.Mock;
     createMoment: jest.Mock;
     deleteMyMoment: jest.Mock;
     findById: jest.Mock;
@@ -62,13 +63,17 @@ describe('PhotographersController', () => {
     findPublicDirectory: jest.Mock;
     findMyMomentById: jest.Mock;
     findMyMoments: jest.Mock;
+    getEarningsHistory: jest.Mock;
+    getEarningsSummary: jest.Mock;
     onboard: jest.Mock;
+    reject: jest.Mock;
     triggerAiAnalysis: jest.Mock;
     updateMyMoment: jest.Mock;
   };
 
   beforeEach(async () => {
     mockPhotographersService = {
+      approve: jest.fn(),
       createMoment: jest.fn(),
       deleteMyMoment: jest.fn(),
       findById: jest.fn(),
@@ -76,7 +81,10 @@ describe('PhotographersController', () => {
       findPublicDirectory: jest.fn(),
       findMyMomentById: jest.fn(),
       findMyMoments: jest.fn(),
+      getEarningsHistory: jest.fn(),
+      getEarningsSummary: jest.fn(),
       onboard: jest.fn(),
+      reject: jest.fn(),
       triggerAiAnalysis: jest.fn(),
       updateMyMoment: jest.fn(),
     };
@@ -283,6 +291,82 @@ describe('PhotographersController', () => {
         'moment-uuid-1',
       );
       expect(response).toBeUndefined();
+    });
+  });
+
+  describe('getEarningsSummary()', () => {
+    it('calls service.getEarningsSummary with user id, returns earnings', async () => {
+      const user = mockRequestUser();
+      const summary = {
+        currency: 'IDR',
+        orderCount: 5,
+        photographerShare: 350000,
+        platformFee: 150000,
+        totalRevenue: 500000,
+      };
+
+      mockPhotographersService.getEarningsSummary.mockResolvedValue(summary);
+
+      const response = await controller.getEarningsSummary(user);
+
+      expect(mockPhotographersService.getEarningsSummary).toHaveBeenCalledWith('user-uuid-1');
+      expect(response).toEqual({
+        message: 'Earnings summary retrieved successfully',
+        result: summary,
+      });
+    });
+  });
+
+  describe('getEarningsHistory()', () => {
+    it('calls service.getEarningsHistory with user id and pagination params, returns history', async () => {
+      const user = mockRequestUser();
+      const history = { data: [], limit: 10, offset: 1, total: 0 };
+
+      mockPhotographersService.getEarningsHistory.mockResolvedValue(history);
+
+      const response = await controller.getEarningsHistory(user, 10, 1);
+
+      expect(mockPhotographersService.getEarningsHistory).toHaveBeenCalledWith(
+        'user-uuid-1',
+        10,
+        1,
+      );
+      expect(response).toEqual({
+        message: 'Earnings history retrieved successfully',
+        result: history,
+      });
+    });
+  });
+
+  describe('approvePhotographer()', () => {
+    it('calls service.approve with profile id, returns approved profile', async () => {
+      const profile = mockProfile();
+
+      mockPhotographersService.approve.mockResolvedValue(profile);
+
+      const response = await controller.approvePhotographer({ id: 'profile-uuid-1' });
+
+      expect(mockPhotographersService.approve).toHaveBeenCalledWith('profile-uuid-1');
+      expect(response).toEqual({
+        message: 'Photographer profile approved',
+        result: profile,
+      });
+    });
+  });
+
+  describe('rejectPhotographer()', () => {
+    it('calls service.reject with profile id, returns rejected profile', async () => {
+      const profile = mockProfile();
+
+      mockPhotographersService.reject.mockResolvedValue(profile);
+
+      const response = await controller.rejectPhotographer({ id: 'profile-uuid-1' });
+
+      expect(mockPhotographersService.reject).toHaveBeenCalledWith('profile-uuid-1');
+      expect(response).toEqual({
+        message: 'Photographer profile rejected',
+        result: profile,
+      });
     });
   });
 });

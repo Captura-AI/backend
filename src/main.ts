@@ -3,6 +3,9 @@ import './instrumentation';
 // Class Validator
 import { useContainer } from 'class-validator';
 
+// Node
+import { join } from 'path';
+
 // Compression
 import compression from 'compression';
 
@@ -105,6 +108,11 @@ async function bootstrap() {
     origin: appConfigurations.corsOrigins.length > 0 ? appConfigurations.corsOrigins : true,
     credentials: true,
   });
+
+  /**
+   * Serve uploaded files at /uploads/* (e.g. /uploads/moments/xxx.jpg)
+   */
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
   await app.listen(appConfigurations.appPort, appConfigurations.appHost, () => {
     logger.log(
