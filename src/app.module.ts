@@ -25,6 +25,11 @@ import { PlateModule } from './modules/plate/plate.module';
 import { SavedModule } from './modules/saved/saved.module';
 import { UsersModule } from './modules/users/users.module';
 
+// Queue
+import { BullModule } from '@nestjs/bullmq';
+import { QueueConfigModule } from './configurations/queue/queue-configuration.module';
+import { QueueConfigService } from './configurations/queue/queue-configuration.service';
+
 // NestJS Libraries
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 
@@ -55,6 +60,17 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
       useFactory: (config: AppConfigurationsService) => [
         { ttl: config.throttleTtl, limit: config.throttleLimit },
       ],
+    }),
+    BullModule.forRootAsync({
+      imports: [QueueConfigModule],
+      inject: [QueueConfigService],
+      useFactory: (config: QueueConfigService) => ({
+        connection: {
+          host: config.queueHost,
+          port: config.queuePort,
+          password: config.queuePassword || undefined,
+        },
+      }),
     }),
 
     // Core Feature Modules

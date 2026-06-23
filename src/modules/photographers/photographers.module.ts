@@ -11,9 +11,6 @@ import { PlateModule } from '../plate/plate.module';
 import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
 import { UsersModule } from '../users/users.module';
 
-// Services
-import { AiAnalysisService } from '../moments/services/ai-analysis.service';
-
 // Multer
 import type { Request } from 'express';
 import type { StorageEngine } from 'multer';
@@ -23,6 +20,10 @@ import { diskStorage } from 'multer';
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
+
+// Queue
+import { BullModule } from '@nestjs/bullmq';
+import { AI_ANALYSIS_QUEUE } from '../moments/queues/ai-analysis.queue';
 
 // Controllers
 import { PhotographersController } from './controllers/photographers.controller';
@@ -67,10 +68,11 @@ const momentFileFilter = (
       limits: { fileSize: 10 * 1024 * 1024 },
       storage: momentStorage,
     }),
+    BullModule.registerQueue({ name: AI_ANALYSIS_QUEUE }),
     PlateModule,
     AppConfigurationModule,
     UsersModule,
   ],
-  providers: [AiAnalysisService, PhotographersService],
+  providers: [PhotographersService],
 })
 export class PhotographersModule {}

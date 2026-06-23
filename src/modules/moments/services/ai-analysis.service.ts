@@ -25,6 +25,8 @@ interface IAiAnalysisResponse {
   };
   license_plate: string | null;
   moment_id: string;
+  motor_type: string | null;
+  color: string | null;
   plate_confidence: number | null;
   processing_time_ms: number;
   vehicle_confidence: number | null;
@@ -43,10 +45,12 @@ type MomentScalarUpdate = {
   aiAnalysis?: Record<string, unknown> | null;
   cameraInfo?: string | null;
   capturedAt?: number | null;
+  color?: string | null;
   embeddingVector?: number[] | null;
   latitude?: number | null;
   licensePlate?: string | null;
   longitude?: number | null;
+  motorType?: string | null;
   vehicleType?: VehicleTypeEnum | null;
 };
 
@@ -64,25 +68,42 @@ const VEHICLE_TYPE_MAP: Record<string, VehicleTypeEnum> = {
 function buildAutoFillFields(moment: MomentEntity, data: IAiAnalysisResponse): MomentScalarUpdate {
   const fields: MomentScalarUpdate = {};
 
-  if (!moment.vehicleType && data.vehicle_type) {
-    fields.vehicleType = VEHICLE_TYPE_MAP[data.vehicle_type] ?? VehicleTypeEnum.OTHER;
+  // Only fill a column the photographer left empty, and only with a real value
+  // (empty string / null are treated as "no value"). Kept as one helper so the
+  // per-field rules stay flat and cognitive complexity low.
+  const fill = <K extends keyof MomentScalarUpdate>(
+    key: K,
+    current: string | number | null | undefined,
+    next: MomentScalarUpdate[K] | null | undefined,
+  ): void => {
+    const isEmpty = current == null || current === '';
+    if (isEmpty && next != null && next !== '') {
+      // `key` is a compile-time `keyof MomentScalarUpdate` literal, not user input —
+      // safe despite the generic object-injection rule.
+      // eslint-disable-next-line security/detect-object-injection
+      fields[key] = next as MomentScalarUpdate[K];
+    }
+  };
+
+  let vehicleType: VehicleTypeEnum | null = null;
+  if (data.vehicle_type) {
+    vehicleType = VEHICLE_TYPE_MAP[data.vehicle_type] ?? VehicleTypeEnum.OTHER;
   }
-  if (!moment.licensePlate && data.license_plate) {
-    fields.licensePlate = data.license_plate;
-  }
-  if (moment.latitude == null && data.exif?.latitude != null) {
-    fields.latitude = data.exif.latitude;
-  }
-  if (moment.longitude == null && data.exif?.longitude != null) {
-    fields.longitude = data.exif.longitude;
-  }
-  if (moment.capturedAt == null && data.exif?.captured_at != null) {
-    fields.capturedAt = data.exif.captured_at;
-  }
-  if (!moment.cameraInfo && data.exif?.camera_model) {
+
+  let cameraInfo: string | null = null;
+  if (data.exif?.camera_model) {
     const make = data.exif.camera_make ? `${data.exif.camera_make} ` : '';
-    fields.cameraInfo = `${make}${data.exif.camera_model}`.trim();
+    cameraInfo = `${make}${data.exif.camera_model}`.trim();
   }
+
+  fill('vehicleType', moment.vehicleType, vehicleType);
+  fill('licensePlate', moment.licensePlate, data.license_plate);
+  fill('motorType', moment.motorType, data.motor_type);
+  fill('color', moment.color, data.color);
+  fill('latitude', moment.latitude, data.exif?.latitude);
+  fill('longitude', moment.longitude, data.exif?.longitude);
+  fill('capturedAt', moment.capturedAt, data.exif?.captured_at);
+  fill('cameraInfo', moment.cameraInfo, cameraInfo);
 
   return fields;
 }
@@ -97,37 +118,45 @@ export class AiAnalysisService {
     private readonly _config: AppConfigurationsService,
   ) {}
 
-  public async analyzeMoment(momentId: string, imageUrl: string): Promise<void> {
-    try {
-      const data = await this._callAiService(momentId, imageUrl);
-      if (!data) return;
-
-      const moment = await this._momentRepository.findOne({ where: { id: momentId } });
-      if (!moment) return;
-
-      const updatePayload: MomentScalarUpdate = {
-        aiAnalysis: data as unknown as Record<string, unknown>,
-        embeddingVector: data.embedding ?? null,
-        ...buildAutoFillFields(moment, data),
-      };
-
-      await this._momentRepository.update(
-        momentId as MomentUpdateCriteria,
-        updatePayload as MomentUpdatePayload,
-      );
-
-      this._logger.log(
-        `AI analysis complete for moment ${momentId} in ${data.processing_time_ms}ms`,
-      );
-    } catch (err) {
-      this._logger.warn(`AI analysis failed for moment ${momentId}: ${err}`);
+  /** Headers for AI-service calls, including the API key when one is configured. */
+  private _aiHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const apiKey = this._config.aiServiceApiKey;
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
     }
+    return headers;
   }
 
-  private async _callAiService(
-    momentId: string,
-    imageUrl: string,
-  ): Promise<IAiAnalysisResponse | null> {
+  /**
+   * Runs AI analysis for one moment and persists the result. Called by the
+   * queue worker — transient failures (AI service unreachable / 5xx) throw so
+   * BullMQ retries them; a missing moment returns quietly (nothing to retry).
+   */
+  public async analyzeMoment(momentId: string, imageUrl: string): Promise<void> {
+    const data = await this._callAiService(momentId, imageUrl);
+
+    const moment = await this._momentRepository.findOne({ where: { id: momentId } });
+    if (!moment) {
+      this._logger.warn(`Moment ${momentId} no longer exists; skipping AI analysis.`);
+      return;
+    }
+
+    const updatePayload: MomentScalarUpdate = {
+      aiAnalysis: data as unknown as Record<string, unknown>,
+      embeddingVector: data.embedding ?? null,
+      ...buildAutoFillFields(moment, data),
+    };
+
+    await this._momentRepository.update(
+      momentId as MomentUpdateCriteria,
+      updatePayload as MomentUpdatePayload,
+    );
+
+    this._logger.log(`AI analysis complete for moment ${momentId} in ${data.processing_time_ms}ms`);
+  }
+
+  private async _callAiService(momentId: string, imageUrl: string): Promise<IAiAnalysisResponse> {
     let response: Response;
 
     // Ensure the AI service receives an absolute HTTP URL — locally-served uploads
@@ -140,17 +169,16 @@ export class AiAnalysisService {
     try {
       response = await fetch(`${this._config.aiServiceUrl}/analyze`, {
         body: JSON.stringify({ image_url: absoluteImageUrl, moment_id: momentId }),
-        headers: { 'Content-Type': 'application/json' },
+        headers: this._aiHeaders(),
         method: 'POST',
       });
     } catch (err) {
-      this._logger.warn(`AI service unreachable for moment ${momentId}: ${err}`);
-      return null;
+      // Rethrow so the queue retries — the AI service may just be momentarily down.
+      throw new Error(`AI service unreachable for moment ${momentId}: ${err}`);
     }
 
     if (!response.ok) {
-      this._logger.warn(`AI service returned ${response.status} for moment ${momentId}`);
-      return null;
+      throw new Error(`AI service returned ${response.status} for moment ${momentId}`);
     }
 
     return (await response.json()) as IAiAnalysisResponse;
@@ -168,7 +196,7 @@ export class AiAnalysisService {
     try {
       response = await fetch(`${this._config.aiServiceUrl}/embed/text`, {
         body: JSON.stringify({ query: normalizedQuery }),
-        headers: { 'Content-Type': 'application/json' },
+        headers: this._aiHeaders(),
         method: 'POST',
       });
     } catch (err) {

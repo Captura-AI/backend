@@ -26,6 +26,7 @@ import { UsersEntity } from '../../users/entities/users.entity';
 import { OrderStatusEnum } from '../../orders/enums/order-status.enum';
 import { PhotographerApprovalStatusEnum } from '../enums/photographer-approval-status.enum';
 import { UserRoleEnum } from '../../users/enums/user-role.enum';
+import { VehicleTypeEnum } from '../../moments/enums/vehicle-type.enum';
 
 // NestJS Libraries
 import {
@@ -33,13 +34,23 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
+// Queue
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
+import {
+  AI_ANALYSIS_JOB,
+  AI_ANALYSIS_JOB_OPTIONS,
+  AI_ANALYSIS_QUEUE,
+  IAiAnalysisJob,
+} from '../../moments/queues/ai-analysis.queue';
+
 // Services
 import { PlateService } from '../../plate/services/plate.service';
-import { AiAnalysisService } from '../../moments/services/ai-analysis.service';
 import { UsersService } from '../../users/services/users.service';
 
 // TypeORM
@@ -55,6 +66,9 @@ import {
   Repository,
 } from 'typeorm';
 
+// Node
+import { randomUUID } from 'crypto';
+
 export interface IMyMomentsResult {
   data: MomentEntity[];
   limit: number;
@@ -66,6 +80,8 @@ const PHOTOGRAPHER_REVENUE_SHARE = 0.7;
 
 @Injectable()
 export class PhotographersService {
+  private readonly _logger = new Logger(PhotographersService.name);
+
   constructor(
     @InjectRepository(MomentEntity)
     private readonly _momentRepository: Repository<MomentEntity>,
@@ -73,7 +89,8 @@ export class PhotographersService {
     private readonly _orderRepository: Repository<OrderEntity>,
     @InjectRepository(PhotographerProfileEntity)
     private readonly _photographerProfileRepository: Repository<PhotographerProfileEntity>,
-    private readonly _aiAnalysisService: AiAnalysisService,
+    @InjectQueue(AI_ANALYSIS_QUEUE)
+    private readonly _aiAnalysisQueue: Queue<IAiAnalysisJob>,
     private readonly _dataSource: DataSource,
     private readonly _plateService: PlateService,
     private readonly _usersService: UsersService,
@@ -231,15 +248,25 @@ export class PhotographersService {
 
     const slug = this._generateMomentSlug(dto.caption);
 
-    // Auto-tag the moment with AI-detected plate / motor type / color so it
-    // becomes searchable. Run outside the DB transaction (network I/O) and stay
-    // fault-tolerant — the upload must still succeed if the AI service is down.
-    const aiAttributes = imageFile ? await this._extractVehicleAttributes(imageFile) : null;
+    // Pre-generate the id so it doubles as the AI scan's uploader_id, keeping the
+    // persisted plate_results keyed to this exact moment.
+    const momentId = randomUUID();
+    const autoApprove = dto.autoApprove ?? true;
+
+    // Auto-tag via the stateful /plate/scan pipeline (persists plate_results +
+    // saves an annotated image), mirroring the plate/scan flow. autoApprove keeps
+    // the scan artifacts; otherwise they are discarded. Runs outside the DB
+    // transaction (network I/O) and stays fault-tolerant — the upload must still
+    // succeed if the AI service is down.
+    const aiAttributes = imageFile
+      ? await this._scanVehicleAttributes(momentId, imageFile, autoApprove)
+      : null;
 
     try {
       return await this._dataSource.transaction(async (manager: EntityManager) => {
         const moment = new MomentEntity();
 
+        moment.id = momentId;
         moment.cameraInfo = dto.cameraInfo ?? null;
         moment.caption = dto.caption;
         moment.capturedAt = dto.capturedAt ?? null;
@@ -257,7 +284,13 @@ export class PhotographersService {
         moment.slug = slug;
         moment.story = dto.story ?? null;
         moment.tags = dto.tags ?? null;
-        moment.vehicleType = dto.vehicleType ?? null;
+        moment.vehicleType = this._normalizeVehicleType(dto.vehicleType);
+        // Keep a reference to the kept annotated scan image (null when discarded).
+        moment.metadata = aiAttributes
+          ? {
+              plateScan: { annotatedPhoto: aiAttributes.annotatedPhoto, autoApproved: autoApprove },
+            }
+          : null;
 
         const savedMoment = await manager.save(MomentEntity, moment);
 
@@ -293,11 +326,17 @@ export class PhotographersService {
   }
 
   /**
-   * @description Trigger AI analysis for a moment — fire-and-forget, does not block the response
+   * @description Enqueue AI analysis for a moment. Returns immediately — the
+   * Redis-backed queue throttles processing so bulk uploads can't overload the
+   * model service. Enqueue failures are logged, never blocking the upload.
    */
   public triggerAiAnalysis(momentId: string, imageUrl: string | null): void {
     if (!imageUrl) return;
-    void this._aiAnalysisService.analyzeMoment(momentId, imageUrl);
+    void this._aiAnalysisQueue
+      .add(AI_ANALYSIS_JOB, { imageUrl, momentId }, AI_ANALYSIS_JOB_OPTIONS)
+      .catch((err: unknown) => {
+        this._logger.warn(`Failed to enqueue AI analysis for moment ${momentId}: ${err}`);
+      });
   }
 
   /**
@@ -392,7 +431,8 @@ export class PhotographersService {
         if (dto.longitude !== undefined) moment.longitude = dto.longitude ?? null;
         if (dto.story !== undefined) moment.story = dto.story ?? null;
         if (dto.tags !== undefined) moment.tags = dto.tags ?? null;
-        if (dto.vehicleType !== undefined) moment.vehicleType = dto.vehicleType ?? null;
+        if (dto.vehicleType !== undefined)
+          moment.vehicleType = this._normalizeVehicleType(dto.vehicleType);
 
         const updatedMoment = await manager.save(MomentEntity, moment);
 
@@ -538,20 +578,58 @@ export class PhotographersService {
    * AI service. Never throws — returns nulls if extraction fails so uploads are
    * resilient to the AI service being unavailable.
    */
-  private async _extractVehicleAttributes(
+  /**
+   * Map a free-form vehicle type string onto the enum the column stores. The
+   * upload accepts any string, but the DB column is constrained, so an unknown
+   * value falls back to OTHER (and blank/missing -> null) instead of erroring.
+   */
+  private _normalizeVehicleType(value?: string | null): VehicleTypeEnum | null {
+    if (!value?.trim()) {
+      return null;
+    }
+    const normalized = value.trim().toLowerCase();
+    const match = Object.values(VehicleTypeEnum).find((type) => type === normalized);
+    return match ?? VehicleTypeEnum.OTHER;
+  }
+
+  /**
+   * Run the stateful /plate/scan pipeline for an uploaded moment image and
+   * return the dominant plate / motor type / color. When `autoApprove` is false
+   * the scan's persisted artifacts (annotated image + plate_results) are
+   * discarded, but the readings are still returned so the moment can be tagged.
+   * Fully fault-tolerant: any AI failure yields null attributes.
+   */
+  private async _scanVehicleAttributes(
+    uploaderId: string,
     imageFile: Express.Multer.File,
-  ): Promise<{ plate: string | null; motorType: string | null; color: string | null }> {
+    autoApprove: boolean,
+  ): Promise<{
+    plate: string | null;
+    motorType: string | null;
+    color: string | null;
+    annotatedPhoto: string | null;
+  }> {
     try {
-      const extracted = await this._plateService.extract(imageFile);
-      const dominantMotor = extracted.motors[0] ?? null;
+      const scan = await this._plateService.scan(uploaderId, imageFile);
+      const dominantMotor = scan.motors[0] ?? null;
+
+      if (!autoApprove) {
+        await this._plateService.confirm({
+          uploaderId,
+          action: 'discard',
+          savedPhotoFilename: scan.savedPhoto ?? undefined,
+          savedResultPhotoFilename: scan.savedResultPhoto ?? undefined,
+        });
+      }
 
       return {
         color: dominantMotor?.color ?? null,
         motorType: dominantMotor?.motorType ?? null,
-        plate: extracted.plates[0] ?? null,
+        plate: scan.plates[0] ?? null,
+        annotatedPhoto: autoApprove ? (scan.savedResultPhoto ?? null) : null,
       };
     } catch {
-      return { color: null, motorType: null, plate: null };
+      return { color: null, motorType: null, plate: null, annotatedPhoto: null };
     }
   }
 

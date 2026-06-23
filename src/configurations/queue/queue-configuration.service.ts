@@ -17,4 +17,12 @@ export class QueueConfigService {
   get queuePassword(): string {
     return this._configService.get<string>('queue.password') ?? '';
   }
+
+  /**
+   * Max AI-analysis jobs processed at once. Bounds concurrent /analyze calls to
+   * the single-process model service so bulk uploads queue instead of piling on.
+   */
+  get aiAnalysisConcurrency(): number {
+    return Number(this._configService.get<string>('queue.aiAnalysisConcurrency') ?? '2');
+  }
 }
