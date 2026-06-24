@@ -553,7 +553,7 @@ describe('PhotographersService', () => {
       expect(result.total).toBe(0);
     });
 
-    it('passes Between filter when both startDate and endDate are provided', async () => {
+    it('passes Between OR-filter on capturedAt and createdAt when both startDate and endDate are provided', async () => {
       mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
 
       const dto = new ListMyMomentsDto();
@@ -562,16 +562,23 @@ describe('PhotographersService', () => {
 
       await service.findMyMoments('user-uuid-1', dto);
 
-      expect(mockMomentRepo.findAndCount).toHaveBeenCalledWith(
+      const call = mockMomentRepo.findAndCount.mock.calls[0][0] as {
+        where: Array<Record<string, unknown>>;
+      };
+
+      expect(Array.isArray(call.where)).toBe(true);
+      expect(call.where[0]).toEqual(
+        expect.objectContaining({ capturedAt: expect.objectContaining({ _type: 'between' }) }),
+      );
+      expect(call.where[1]).toEqual(
         expect.objectContaining({
-          where: expect.objectContaining({
-            capturedAt: expect.objectContaining({ _type: 'between' }),
-          }),
+          capturedAt: expect.objectContaining({ _type: 'isNull' }),
+          createdAt: expect.objectContaining({ _type: 'between' }),
         }),
       );
     });
 
-    it('passes MoreThanOrEqual filter when only startDate is provided', async () => {
+    it('passes MoreThanOrEqual OR-filter when only startDate is provided', async () => {
       mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
 
       const dto = new ListMyMomentsDto();
@@ -579,16 +586,22 @@ describe('PhotographersService', () => {
 
       await service.findMyMoments('user-uuid-1', dto);
 
-      expect(mockMomentRepo.findAndCount).toHaveBeenCalledWith(
+      const call = mockMomentRepo.findAndCount.mock.calls[0][0] as {
+        where: Array<Record<string, unknown>>;
+      };
+
+      expect(Array.isArray(call.where)).toBe(true);
+      expect(call.where[0]).toEqual(
         expect.objectContaining({
-          where: expect.objectContaining({
-            capturedAt: expect.objectContaining({ _type: 'moreThanOrEqual' }),
-          }),
+          capturedAt: expect.objectContaining({ _type: 'moreThanOrEqual' }),
         }),
+      );
+      expect(call.where[1]).toEqual(
+        expect.objectContaining({ capturedAt: expect.objectContaining({ _type: 'isNull' }) }),
       );
     });
 
-    it('passes LessThanOrEqual filter when only endDate is provided', async () => {
+    it('passes LessThanOrEqual OR-filter when only endDate is provided', async () => {
       mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
 
       const dto = new ListMyMomentsDto();
@@ -596,16 +609,22 @@ describe('PhotographersService', () => {
 
       await service.findMyMoments('user-uuid-1', dto);
 
-      expect(mockMomentRepo.findAndCount).toHaveBeenCalledWith(
+      const call = mockMomentRepo.findAndCount.mock.calls[0][0] as {
+        where: Array<Record<string, unknown>>;
+      };
+
+      expect(Array.isArray(call.where)).toBe(true);
+      expect(call.where[0]).toEqual(
         expect.objectContaining({
-          where: expect.objectContaining({
-            capturedAt: expect.objectContaining({ _type: 'lessThanOrEqual' }),
-          }),
+          capturedAt: expect.objectContaining({ _type: 'lessThanOrEqual' }),
         }),
+      );
+      expect(call.where[1]).toEqual(
+        expect.objectContaining({ capturedAt: expect.objectContaining({ _type: 'isNull' }) }),
       );
     });
 
-    it('omits capturedAt filter when no date range is provided', async () => {
+    it('omits date filter (plain object where) when no date range is provided', async () => {
       mockMomentRepo.findAndCount.mockResolvedValue([[], 0]);
 
       const dto = new ListMyMomentsDto();
@@ -615,6 +634,8 @@ describe('PhotographersService', () => {
       const call = mockMomentRepo.findAndCount.mock.calls[0][0] as {
         where: Record<string, unknown>;
       };
+
+      expect(Array.isArray(call.where)).toBe(false);
       expect(call.where).not.toHaveProperty('capturedAt');
     });
   });

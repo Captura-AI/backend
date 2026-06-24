@@ -60,6 +60,7 @@ import {
   EntityManager,
   FindOperator,
   ILike,
+  In,
   IsNull,
   LessThanOrEqual,
   MoreThanOrEqual,
@@ -374,10 +375,10 @@ export class PhotographersService {
   }
 
   /**
-   * @description Build a TypeORM operator that filters capturedAt by date range.
+   * @description Build a TypeORM operator that filters a date column by range (Unix seconds).
    * Returns undefined when no range bounds are provided (no filter applied).
    */
-  private _buildCapturedAtFilter(
+  private _buildDateRangeFilter(
     startDate?: number,
     endDate?: number,
   ): FindOperator<number> | undefined {
@@ -390,22 +391,28 @@ export class PhotographersService {
 
   /**
    * @description List paginated moments owned by the authenticated photographer.
-   * Supports optional capturedAt date range via startDate / endDate (Unix seconds UTC).
+   * Supports optional date range via startDate / endDate (Unix seconds UTC).
+   * Matches on capturedAt first; moments with capturedAt = null fall back to createdAt.
    */
   public async findMyMoments(userId: string, dto: ListMyMomentsDto): Promise<IMyMomentsResult> {
     const limit = dto.limit ?? 10;
     const offset = dto.offset ?? 1;
-    const capturedAtFilter = this._buildCapturedAtFilter(dto.startDate, dto.endDate);
+    const dateFilter = this._buildDateRangeFilter(dto.startDate, dto.endDate);
+
+    const baseCondition = { deletedAt: IsNull(), photographerId: userId };
+
+    const where = dateFilter
+      ? [
+          { ...baseCondition, capturedAt: dateFilter },
+          { ...baseCondition, capturedAt: IsNull(), createdAt: dateFilter },
+        ]
+      : baseCondition;
 
     const [data, total] = await this._momentRepository.findAndCount({
       order: { createdAt: 'DESC' },
       skip: dto.skip,
       take: limit,
-      where: {
-        deletedAt: IsNull(),
-        photographerId: userId,
-        ...(capturedAtFilter !== undefined ? { capturedAt: capturedAtFilter } : {}),
-      },
+      where,
     });
 
     return { data, limit, offset, total };
@@ -451,6 +458,8 @@ export class PhotographersService {
         if (dto.tags !== undefined) moment.tags = dto.tags ?? null;
         if (dto.vehicleType !== undefined)
           moment.vehicleType = this._normalizeVehicleType(dto.vehicleType);
+
+        if (dto.isPublished !== undefined) moment.isPublished = dto.isPublished;
 
         const updatedMoment = await manager.save(MomentEntity, moment);
 
@@ -499,6 +508,29 @@ export class PhotographersService {
       { id: momentId },
       { deletedAt: Math.floor(Date.now() / 1000) },
     );
+  }
+
+  /**
+   * @description Bulk-set isPublished on moments owned by the authenticated photographer.
+   * Only moments that exist and belong to the photographer are updated; unknown IDs are silently skipped.
+   */
+  public async bulkSetPublished(
+    userId: string,
+    momentIds: string[],
+    isPublished: boolean,
+  ): Promise<{ updated: number }> {
+    if (momentIds.length === 0) {
+      return { updated: 0 };
+    }
+
+    const result = await this._momentRepository.update(
+      { id: In(momentIds), photographerId: userId, deletedAt: IsNull() },
+      { isPublished },
+    );
+
+    const updated = result.affected ?? 0;
+
+    return { updated };
   }
 
   /**

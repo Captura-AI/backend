@@ -1,5 +1,8 @@
+// Gateways
+import type { MomentsGateway } from '../gateways/moments.gateway';
+
 // NestJS Libraries
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 // Configuration
@@ -116,6 +119,7 @@ export class AiAnalysisService {
     @InjectRepository(MomentEntity)
     private readonly _momentRepository: Repository<MomentEntity>,
     private readonly _config: AppConfigurationsService,
+    @Optional() private readonly _momentsGateway?: MomentsGateway,
   ) {}
 
   /** Headers for AI-service calls, including the API key when one is configured. */
@@ -154,6 +158,12 @@ export class AiAnalysisService {
     );
 
     this._logger.log(`AI analysis complete for moment ${momentId} in ${data.processing_time_ms}ms`);
+
+    const status = data.error ? 'failed' : 'ready';
+
+    if (moment.photographerId) {
+      this._momentsGateway?.emitMomentAnalyzed(moment.photographerId, momentId, status);
+    }
   }
 
   private async _callAiService(momentId: string, imageUrl: string): Promise<IAiAnalysisResponse> {
