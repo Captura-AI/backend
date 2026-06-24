@@ -11,15 +11,18 @@ import {
 // Socket.IO
 import type { Server, Socket } from 'socket.io';
 
+// Node
+import { verify } from 'jsonwebtoken';
+
 /**
  * WebSocket gateway for real-time moment analysis events.
  * Emits `moment.analyzed` when an AI analysis job completes so the
  * photographer dashboard can refresh without polling.
  *
- * Clients join a room keyed by their userId. The gateway requires no
- * auth middleware here — the actual authentication happens in the HTTP
- * layer before the photographer can upload. Room membership is
- * established by the client sending a `join` event with their userId.
+ * Each client authenticates by sending their JWT in the `auth.token` field
+ * of the socket handshake. On successful verification the socket joins a room
+ * keyed by `user:<userId>`. Falls back gracefully — unauthenticated sockets
+ * simply do not join a room and will not receive events.
  */
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -36,11 +39,24 @@ export class MomentsGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   public handleConnection(client: Socket): void {
-    const userId = client.handshake.query['userId'] as string | undefined;
+    const token = (client.handshake.auth as Record<string, unknown>)?.token as string | undefined;
 
-    if (userId) {
-      void client.join(`user:${userId}`);
-      this._logger.debug(`Client ${client.id} joined room user:${userId}`);
+    if (!token) {
+      this._logger.debug(`Client ${client.id} connected without token — no room joined`);
+      return;
+    }
+
+    try {
+      const secret = process.env.JWT_SECRET ?? '';
+      const payload = verify(token, secret) as { sub?: string };
+      const userId = payload.sub;
+
+      if (userId) {
+        void client.join(`user:${userId}`);
+        this._logger.debug(`Client ${client.id} joined room user:${userId}`);
+      }
+    } catch {
+      this._logger.debug(`Client ${client.id} provided invalid token`);
     }
   }
 
