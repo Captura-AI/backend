@@ -274,6 +274,25 @@ export class PhotographersController {
     };
   }
 
+  @Delete('moments/bulk-delete')
+  @HttpCode(200)
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Bulk soft-delete moments owned by the authenticated photographer (single DB query)',
+  })
+  public async bulkDeleteMoments(
+    @CurrentUser() user: IRequestUser,
+    @Body() body: BulkMomentActionDto,
+  ) {
+    const result = await this._photographersService.bulkDeleteMoments(user.id, body.momentIds);
+
+    return {
+      message: 'Moments deleted successfully',
+      result,
+    };
+  }
+
   @Delete(MOMENT_ID_ROUTE)
   @HttpCode(204)
   @UseGuards(PhotographerRoleGuard)
