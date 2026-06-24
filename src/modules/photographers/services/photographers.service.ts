@@ -511,6 +511,27 @@ export class PhotographersService {
   }
 
   /**
+   * @description Bulk soft-delete moments owned by the authenticated photographer.
+   * Issues a single UPDATE with an IN clause — no N+1. Unknown or unowned IDs are
+   * silently skipped (ownership enforced via photographerId constraint).
+   */
+  public async bulkDeleteMoments(
+    userId: string,
+    momentIds: string[],
+  ): Promise<{ deleted: number }> {
+    if (momentIds.length === 0) {
+      return { deleted: 0 };
+    }
+
+    const result = await this._momentRepository.update(
+      { id: In(momentIds), photographerId: userId, deletedAt: IsNull() },
+      { deletedAt: Math.floor(Date.now() / 1000) },
+    );
+
+    return { deleted: result.affected ?? 0 };
+  }
+
+  /**
    * @description Bulk-set isPublished on moments owned by the authenticated photographer.
    * Only moments that exist and belong to the photographer are updated; unknown IDs are silently skipped.
    */

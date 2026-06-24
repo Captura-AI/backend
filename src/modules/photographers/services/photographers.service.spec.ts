@@ -794,6 +794,32 @@ describe('PhotographersService', () => {
     });
   });
 
+  describe('bulkDeleteMoments()', () => {
+    it('soft-deletes all matching moments in a single UPDATE and returns deleted count', async () => {
+      mockMomentRepo.update.mockResolvedValue({ affected: 3 });
+
+      const result = await service.bulkDeleteMoments('user-uuid-1', [
+        'moment-uuid-1',
+        'moment-uuid-2',
+        'moment-uuid-3',
+      ]);
+
+      expect(result).toEqual({ deleted: 3 });
+      expect(mockMomentRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockMomentRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ photographerId: 'user-uuid-1' }),
+        expect.objectContaining({ deletedAt: expect.any(Number) }),
+      );
+    });
+
+    it('returns 0 and skips the DB call when momentIds is empty', async () => {
+      const result = await service.bulkDeleteMoments('user-uuid-1', []);
+
+      expect(result).toEqual({ deleted: 0 });
+      expect(mockMomentRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('approve()', () => {
     it('sets approvalStatus to approved and isApproved to true', async () => {
       const profile = mockProfile();
