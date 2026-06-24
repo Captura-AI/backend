@@ -340,7 +340,13 @@ export class PhotographersService {
   }
 
   /**
-   * @description Reset aiAnalysis and re-trigger AI analysis for a moment owned by the user
+   * @description Reset all AI-derived fields and re-trigger the full analysis pipeline.
+   *
+   * Clears aiAnalysis, embeddingVector, and the scalar fields auto-filled from the
+   * first run (licensePlate, vehicleType, motorType, color, capturedAt, cameraInfo,
+   * latitude, longitude). buildAutoFillFields() only fills empty fields, so resetting
+   * them here lets the new run write fresh values. Manually-entered fields
+   * (caption, story, tags) are preserved.
    */
   public async retryMomentAnalysis(userId: string, momentId: string): Promise<void> {
     const moment = await this._momentRepository.findOne({
@@ -351,7 +357,19 @@ export class PhotographersService {
       throw new NotFoundException('Moment not found');
     }
 
-    await this._momentRepository.update(moment.id, { aiAnalysis: null });
+    await this._momentRepository.update(moment.id, {
+      aiAnalysis: null,
+      cameraInfo: null,
+      capturedAt: null,
+      color: null,
+      embeddingVector: null,
+      latitude: null,
+      licensePlate: null,
+      longitude: null,
+      motorType: null,
+      vehicleType: null,
+    });
+
     this.triggerAiAnalysis(moment.id, moment.imageUrl);
   }
 
