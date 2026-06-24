@@ -3,6 +3,7 @@ import { ApiBaseResponse } from '../../../common/decorators/api-base-response.de
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 
 // DTOs
+import { BulkMomentActionDto } from '../dtos/bulk-moment-action.dto';
 import { CreateMomentDto } from '../../moments/dtos/create-moment.dto';
 import { ListPhotographersDto } from '../dtos/list-photographers.dto';
 import { ListMyMomentsDto } from '../../moments/dtos/list-my-moments.dto';
@@ -213,6 +214,46 @@ export class PhotographersController {
     await this._photographersService.retryMomentAnalysis(user.id, params.id);
 
     return { message: 'AI analysis re-queued' };
+  }
+
+  @Patch('moments/bulk-publish')
+  @HttpCode(200)
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Publish multiple moments owned by the authenticated photographer' })
+  public async bulkPublishMoments(
+    @CurrentUser() user: IRequestUser,
+    @Body() body: BulkMomentActionDto,
+  ) {
+    const result = await this._photographersService.bulkSetPublished(user.id, body.momentIds, true);
+
+    return {
+      message: 'Moments published successfully',
+      result,
+    };
+  }
+
+  @Patch('moments/bulk-save-draft')
+  @HttpCode(200)
+  @UseGuards(PhotographerRoleGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Save multiple moments as draft (unpublish) for the authenticated photographer',
+  })
+  public async bulkSaveDraftMoments(
+    @CurrentUser() user: IRequestUser,
+    @Body() body: BulkMomentActionDto,
+  ) {
+    const result = await this._photographersService.bulkSetPublished(
+      user.id,
+      body.momentIds,
+      false,
+    );
+
+    return {
+      message: 'Moments saved as draft successfully',
+      result,
+    };
   }
 
   @Patch(MOMENT_ID_ROUTE)

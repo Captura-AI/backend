@@ -120,6 +120,15 @@ export class MomentEntity extends AppBaseEntity {
   @Column({ name: 'color', type: 'varchar', length: 50, nullable: true })
   public color!: string | null;
 
+  // ─── Publishing ──────────────────────────────────────────────────────────────
+
+  @ApiProperty({
+    default: false,
+    description: 'Whether this moment is publicly visible on the platform',
+  })
+  @Column({ name: 'is_published', type: 'boolean', default: false })
+  public isPublished!: boolean;
+
   // ─── Metadata & AI Placeholders ──────────────────────────────────────────────
 
   @ApiProperty({ nullable: true, description: 'Flexible JSONB storage for additional data' })

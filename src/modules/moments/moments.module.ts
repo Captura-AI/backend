@@ -6,6 +6,9 @@ import { MomentCollaboratorEntity } from './entities/moment-collaborator.entity'
 import { MomentEntity } from './entities/moments.entity';
 import { MomentLicenseEntity } from './entities/moment-license.entity';
 
+// Gateways
+import { MomentsGateway } from './gateways/moments.gateway';
+
 // Modules
 import { AppConfigurationModule } from '../../configurations/app/app-configuration.module';
 import { PlateModule } from '../plate/plate.module';
@@ -32,6 +35,6 @@ import { MomentsService } from './services/moments.service';
     AppConfigurationModule,
     PlateModule,
   ],
-  providers: [AiAnalysisProcessor, AiAnalysisService, MomentsService],
+  providers: [AiAnalysisProcessor, AiAnalysisService, MomentsGateway, MomentsService],
 })
 export class MomentsModule {}
