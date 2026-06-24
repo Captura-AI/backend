@@ -703,6 +703,53 @@ describe('PhotographersService', () => {
     });
   });
 
+  describe('retryMomentAnalysis()', () => {
+    it('resets all AI-derived scalar fields and re-queues the analysis job', async () => {
+      const moment = mockMoment();
+      moment.imageUrl = 'uploads/moments/photo.jpg';
+      mockMomentRepo.findOne.mockResolvedValue(moment);
+      mockMomentRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.retryMomentAnalysis('user-uuid-1', 'moment-uuid-1');
+
+      expect(mockMomentRepo.update).toHaveBeenCalledWith(
+        'moment-uuid-1',
+        expect.objectContaining({
+          aiAnalysis: null,
+          licensePlate: null,
+          vehicleType: null,
+          motorType: null,
+          color: null,
+          embeddingVector: null,
+          capturedAt: null,
+          cameraInfo: null,
+          latitude: null,
+          longitude: null,
+        }),
+      );
+      expect(mockAiAnalysisQueue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws NotFoundException when moment does not exist or not owned', async () => {
+      mockMomentRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.retryMomentAnalysis('user-uuid-1', 'non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('does not enqueue when moment has no imageUrl', async () => {
+      const moment = mockMoment();
+      moment.imageUrl = null;
+      mockMomentRepo.findOne.mockResolvedValue(moment);
+      mockMomentRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.retryMomentAnalysis('user-uuid-1', 'moment-uuid-1');
+
+      expect(mockAiAnalysisQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteMyMoment()', () => {
     it('soft-deletes the moment by setting deletedAt timestamp', async () => {
       const moment = mockMoment();

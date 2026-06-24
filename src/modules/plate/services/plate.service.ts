@@ -73,8 +73,12 @@ export class PlateService {
   public async scan(uploaderId: string, file: Express.Multer.File): Promise<PlateScanResponseDto> {
     const baseUrl = this._appConfig.aiServiceUrl;
 
+    // Use _readFileBytes() to handle both memory storage (file.buffer) and disk
+    // storage (file.path), since the photographers module uses diskStorage and
+    // file.buffer is undefined in that case.
+    const bytes = await this._readFileBytes(file);
     const formData = new FormData();
-    formData.append('file', new Blob([file.buffer], { type: file.mimetype }), file.originalname);
+    formData.append('file', new Blob([bytes], { type: file.mimetype }), file.originalname);
 
     let scanResult: IAiPlateScanResult;
     try {
