@@ -9,6 +9,9 @@ import type { UpdateLicenseTypeDto } from '../dtos/update-license-type.dto';
 // Entities
 import { LicenseTypeEntity } from '../entities/license-type.entity';
 
+// Interfaces
+import type { ILicenseTypesResult } from '../interfaces/license-types.interface';
+
 // NestJS Libraries
 import {
   BadRequestException,
@@ -20,13 +23,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 
 // TypeORM
 import { IsNull, Repository, type FindOptionsWhere } from 'typeorm';
-
-export interface ILicenseTypesResult {
-  data: LicenseTypeEntity[];
-  limit: number;
-  offset: number;
-  total: number;
-}
 
 @Injectable()
 export class LicenseTypesService {

@@ -8,6 +8,7 @@ import type { ListPhotographersDto } from '../dtos/list-photographers.dto';
 import type { OnboardPhotographerDto } from '../dtos/onboard-photographer.dto';
 import type { PhotographerPackageEntity } from '../entities/photographer-package.entity';
 import type { UpdateMomentDto } from '../../moments/dtos/update-moment.dto';
+import type { IMyMomentsResult } from '../interfaces/photographers.interface';
 import type {
   IPublicPhotographerDetail,
   IPublicPhotographerDirectoryItem,
@@ -21,6 +22,9 @@ import { OrderEntity } from '../../orders/entities/order.entity';
 import { PhotographerProfileEntity } from '../entities/photographer-profile.entity';
 import { PhotographerReviewEntity } from '../entities/photographer-review.entity';
 import { UsersEntity } from '../../users/entities/users.entity';
+
+// Helpers
+import { maskPlate } from '../../../common/helpers/plate.helper';
 
 // Enums
 import { OrderStatusEnum } from '../../orders/enums/order-status.enum';
@@ -69,13 +73,6 @@ import {
 
 // Node
 import { randomUUID } from 'crypto';
-
-export interface IMyMomentsResult {
-  data: MomentEntity[];
-  limit: number;
-  offset: number;
-  total: number;
-}
 
 const PHOTOGRAPHER_REVENUE_SHARE = 0.7;
 
@@ -774,20 +771,6 @@ export class PhotographersService {
     return candidate;
   }
 
-  private _maskPlate(value: string | null): string | null {
-    if (!value) {
-      return null;
-    }
-
-    const normalized = value.trim().toUpperCase();
-
-    if (normalized.length <= 4) {
-      return `${normalized.slice(0, 1)}***`;
-    }
-
-    return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
-  }
-
   private _publishedReviews(profile: PhotographerProfileEntity): PhotographerReviewEntity[] {
     return (profile.reviews ?? []).filter((item) => item.isPublished && item.deletedAt === null);
   }
@@ -844,7 +827,7 @@ export class PhotographersService {
       district: moment.district,
       id: moment.id,
       imageUrl: moment.thumbnailUrl ?? moment.imageUrl,
-      licensePlate: this._maskPlate(moment.licensePlate),
+      licensePlate: maskPlate(moment.licensePlate),
       slug: moment.slug,
       tags,
       title: moment.caption ?? 'Untitled moment',

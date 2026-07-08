@@ -3,58 +3,15 @@ import { promises as fs } from 'fs';
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { AppConfigurationsService } from '../../../configurations/app/app-configuration.service';
+import { AI_SERVICE_UNAVAILABLE_MESSAGE } from '../constants/plate.constant';
 import { PlateConfirmDto, PlateConfirmResponseDto } from '../dtos/plate-confirm.dto';
 import { PlateScanResponseDto } from '../dtos/plate-scan.dto';
-
-interface IAiMotorDetection {
-  motor_type: string;
-  motor_type_confidence: number;
-  color: string | null;
-  color_confidence: number | null;
-  plate: string | null;
-  plate_confidence: number | null;
-  bbox: number[];
-}
-
-interface IAiPlateScanResult {
-  uploader_id: string;
-  plates: string[];
-  confidence: number | null;
-  motors: IAiMotorDetection[];
-  saved_photo: string | null;
-  saved_result_photo: string | null;
-  error: string | null;
-}
-
-interface IAiPlateConfirmResult {
-  uploader_id: string;
-  action: string;
-  success: boolean;
-  message: string;
-}
-
-const AI_SERVICE_UNAVAILABLE_MESSAGE = 'AI service is unavailable';
-
-interface IAiPlateExtractResult {
-  plates: string[];
-  confidence: number | null;
-  motors: IAiMotorDetection[];
-  error: string | null;
-}
-
-export interface IPlateExtractMotor {
-  motorType: string;
-  motorTypeConfidence: number;
-  color: string | null;
-  colorConfidence: number | null;
-}
-
-export interface IPlateExtractResult {
-  plates: string[];
-  confidence: number | null;
-  motors: IPlateExtractMotor[];
-  error: string | null;
-}
+import type {
+  IAiPlateConfirmResult,
+  IAiPlateExtractResult,
+  IAiPlateScanResult,
+  IPlateExtractResult,
+} from '../interfaces/plate.interface';
 
 @Injectable()
 export class PlateService {

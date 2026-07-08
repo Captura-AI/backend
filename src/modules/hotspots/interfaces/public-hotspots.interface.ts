@@ -77,3 +77,9 @@ export interface IPublicHotspotDetail {
   activePhotographers: IPublicActivePhotographer[];
   latestMoments: IPublicFeedMoment[];
 }
+
+export interface IRawStats {
+  total: string | null;
+  last15: string | null;
+  active: string | null;
+}

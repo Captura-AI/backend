@@ -1,3 +1,6 @@
+// Constants
+import { assertTransitionAllowed } from '../constants/booking-transitions.constant';
+
 // DTOs
 import type { CreateBookingDto } from '../dtos/create-booking.dto';
 import type { ListBookingsDto } from '../dtos/list-bookings.dto';
@@ -13,41 +16,12 @@ import { BookingStatusEnum } from '../enums/booking-status.enum';
 import { UserRoleEnum } from '../../users/enums/user-role.enum';
 
 // NestJS Libraries
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 // TypeORM
 import type { FindManyOptions } from 'typeorm';
 import { Repository } from 'typeorm';
-
-// ─── Status Transition Map ────────────────────────────────────────────────────
-// Defines which target status is reachable from each source status,
-// keyed by action (accept / decline / propose-time / cancel / complete).
-const VALID_TRANSITIONS: Record<string, BookingStatusEnum[]> = {
-  [BookingStatusEnum.PENDING]: [
-    BookingStatusEnum.ACCEPTED,
-    BookingStatusEnum.DECLINED,
-    BookingStatusEnum.PENDING, // propose-time keeps status PENDING
-    BookingStatusEnum.CANCELLED,
-  ],
-  [BookingStatusEnum.ACCEPTED]: [BookingStatusEnum.COMPLETED, BookingStatusEnum.CANCELLED],
-  [BookingStatusEnum.DECLINED]: [],
-  [BookingStatusEnum.COMPLETED]: [],
-  [BookingStatusEnum.CANCELLED]: [],
-};
-
-function assertTransitionAllowed(from: BookingStatusEnum, to: BookingStatusEnum): void {
-  const allowed = VALID_TRANSITIONS[from] ?? [];
-
-  if (!allowed.includes(to)) {
-    throw new BadRequestException(`Cannot transition booking from '${from}' to '${to}'.`);
-  }
-}
 
 @Injectable()
 export class BookingsService {
