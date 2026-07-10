@@ -1,6 +1,9 @@
 // Constants
 import { BAD_REQUEST_MSG } from '../../../common/constants/common.constant';
-import { MOMENTS_SOFT_DELETE_FILTER } from '../constants/moments.constant';
+import {
+  MOMENTS_PUBLISHED_FILTER,
+  MOMENTS_SOFT_DELETE_FILTER,
+} from '../constants/moments.constant';
 
 // DTOs
 import { PageMetaDto } from '../../../common/dtos/page-meta.dto';
@@ -13,7 +16,6 @@ import { MomentEntity } from '../entities/moments.entity';
 import { MomentLicenseEntity } from '../entities/moment-license.entity';
 
 // Helpers
-import { maskPlate } from '../../../common/helpers/plate.helper';
 import { QuerySortingHelper } from '../../../common/helpers/query-sorting.helper';
 import {
   CANONICAL_PLATE_SQL,
@@ -30,6 +32,7 @@ import {
   normalizePlate,
   vectorLiteral,
 } from '../helpers/plate-matching.helper';
+import { maskPublicMoment } from '../helpers/public-sanitization.helper';
 import { buildMatch } from '../helpers/search-scoring.helper';
 
 // Interfaces
@@ -55,12 +58,6 @@ const COL_CAPTURED_AT = 'moments.captured_at';
 // metadata when paginating (skip/take), so it must be the camelCase property,
 // not the snake_case DB column — otherwise getMany throws on `databaseName`.
 const ORDER_CAPTURED_AT = 'moments.capturedAt';
-
-function maskPublicMoment(moment: MomentEntity): MomentEntity {
-  return Object.assign(Object.create(Object.getPrototypeOf(moment)) as MomentEntity, moment, {
-    licensePlate: maskPlate(moment.licensePlate),
-  });
-}
 
 @Injectable()
 export class MomentsService {
@@ -237,7 +234,7 @@ export class MomentsService {
 
       this._addRelations(query);
 
-      query.andWhere(MOMENTS_SOFT_DELETE_FILTER);
+      query.andWhere(MOMENTS_SOFT_DELETE_FILTER).andWhere(MOMENTS_PUBLISHED_FILTER);
 
       if (queryEmbedding) {
         this._applySemanticOrdering(queryEmbedding, query);
@@ -361,7 +358,7 @@ export class MomentsService {
     try {
       const query = this._momentsRepository.createQueryBuilder('moments');
       this._addRelations(query);
-      query.where(MOMENTS_SOFT_DELETE_FILTER);
+      query.where(MOMENTS_SOFT_DELETE_FILTER).andWhere(MOMENTS_PUBLISHED_FILTER);
       query.setParameters({ color, motorType });
 
       if (normalizedPlate) {
@@ -391,7 +388,7 @@ export class MomentsService {
       const { entities, raw } = await query.getRawAndEntities();
 
       return entities.map((entity, index) =>
-        Object.assign(entity, {
+        Object.assign(maskPublicMoment(entity), {
           matchScore: Number((raw[index] as { match_score?: number })?.match_score ?? 0),
         }),
       );
@@ -436,7 +433,10 @@ export class MomentsService {
     const query = this._momentsRepository.createQueryBuilder('moments');
 
     this._addDetailRelations(query);
-    query.where('moments.id = :id', { id }).andWhere(MOMENTS_SOFT_DELETE_FILTER);
+    query
+      .where('moments.id = :id', { id })
+      .andWhere(MOMENTS_SOFT_DELETE_FILTER)
+      .andWhere(MOMENTS_PUBLISHED_FILTER);
 
     const moment = await query.getOne();
 
@@ -480,6 +480,7 @@ export class MomentsService {
     const query = this._momentsRepository
       .createQueryBuilder('moments')
       .where(MOMENTS_SOFT_DELETE_FILTER)
+      .andWhere(MOMENTS_PUBLISHED_FILTER)
       .andWhere('moments.id != :momentId', { momentId });
 
     this._addRelations(query);
@@ -538,6 +539,7 @@ export class MomentsService {
       const moments = await this._momentsRepository
         .createQueryBuilder('moments')
         .where(MOMENTS_SOFT_DELETE_FILTER)
+        .andWhere(MOMENTS_PUBLISHED_FILTER)
         .orderBy(COL_CAPTURED_AT, 'DESC')
         .take(limit)
         .cache(true)
@@ -560,6 +562,7 @@ export class MomentsService {
         .select('moments.city', 'label')
         .addSelect('COUNT(*)', 'count')
         .where(MOMENTS_SOFT_DELETE_FILTER)
+        .andWhere(MOMENTS_PUBLISHED_FILTER)
         .andWhere('moments.city IS NOT NULL')
         .groupBy('moments.city')
         .orderBy('count', 'DESC')
@@ -572,6 +575,7 @@ export class MomentsService {
         .select('moments.vehicle_type', 'label')
         .addSelect('COUNT(*)', 'count')
         .where(MOMENTS_SOFT_DELETE_FILTER)
+        .andWhere(MOMENTS_PUBLISHED_FILTER)
         .andWhere('moments.vehicle_type IS NOT NULL')
         .groupBy('moments.vehicle_type')
         .orderBy('count', 'DESC')

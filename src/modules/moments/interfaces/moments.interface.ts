@@ -108,3 +108,19 @@ export type MomentScalarUpdate = {
   motorType?: string | null;
   vehicleType?: VehicleTypeEnum | null;
 };
+
+// Shape of a single vehicle entry inside the raw ai-service `aiAnalysis`
+// payload — used when sanitizing per-vehicle plate reads for public responses.
+export interface IAiAnalysisVehicle {
+  license_plate?: string | null;
+  [key: string]: unknown;
+}
+
+// Public-safe subset of UsersEntity — moment responses must never carry a
+// photographer's email, phone, or OAuth identifiers.
+export interface IPublicPhotographer {
+  id: string;
+  name: string | null;
+  avatar: string | null;
+  role: string;
+}
