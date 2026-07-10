@@ -10,6 +10,7 @@ import { TIME_OF_DAY_HOURS, TimeOfDayEnum } from '../dtos/time-filter.dto';
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
 import { MomentLicenseEntity } from '../entities/moment-license.entity';
+import { UsersEntity } from '../../users/entities/users.entity';
 
 // Helpers
 import { QuerySortingHelper } from '../../../common/helpers/query-sorting.helper';
@@ -33,6 +34,10 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 import { AiAnalysisService } from './ai-analysis.service';
 
 const SOFT_DELETE_FILTER = 'moments.deleted_at IS NULL';
+// Public read paths (search/recent/detail/similar/facets) must never surface
+// a photographer's unpublished draft — only their own dashboard queries
+// (PhotographersService) may bypass this.
+const PUBLISHED_FILTER = 'moments.is_published = true';
 // Raw SQL column reference — safe inside andWhere/EXTRACT expressions.
 const COL_CAPTURED_AT = 'moments.captured_at';
 // Entity property path for orderBy. TypeORM resolves orderBy targets to column
@@ -155,10 +160,87 @@ function maskPlate(value: string | null): string | null {
   return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
 }
 
+interface IAiAnalysisVehicle {
+  license_plate?: string | null;
+  [key: string]: unknown;
+}
+
+// The raw ai-service payload carries a raw plate read in two places: a
+// top-level `license_plate` (the unmatched-plate fallback — see analyzer.py)
+// and a per-vehicle `license_plate` inside `vehicles[]`. It also embeds a
+// 512-dim `embedding`. All three must be stripped/masked before reaching a
+// public response, mirroring the masking already applied to moments.licensePlate.
+function sanitizeAiAnalysis(
+  aiAnalysis: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!aiAnalysis) {
+    return aiAnalysis;
+  }
+
+  const publicFields = { ...aiAnalysis };
+  delete publicFields['embedding'];
+
+  if (typeof publicFields['license_plate'] === 'string') {
+    publicFields['license_plate'] = maskPlate(publicFields['license_plate']);
+  }
+
+  const vehicles = publicFields['vehicles'];
+
+  if (!Array.isArray(vehicles)) {
+    return publicFields;
+  }
+
+  return {
+    ...publicFields,
+    vehicles: vehicles.map((vehicle) => {
+      const typedVehicle = vehicle as IAiAnalysisVehicle;
+
+      return { ...typedVehicle, license_plate: maskPlate(typedVehicle.license_plate ?? null) };
+    }),
+  };
+}
+
+interface IPublicPhotographer {
+  id: string;
+  name: string | null;
+  avatar: string | null;
+  role: string;
+}
+
+// Public moment responses must never carry a photographer's email, phone,
+// or OAuth identifiers — only the identity fields the UI actually renders.
+function sanitizePhotographer(user: UsersEntity | null | undefined): IPublicPhotographer | null {
+  if (!user) {
+    return null;
+  }
+
+  return { id: user.id, name: user.name, avatar: user.avatar, role: user.role };
+}
+
 function maskPublicMoment(moment: MomentEntity): MomentEntity {
-  return Object.assign(Object.create(Object.getPrototypeOf(moment)) as MomentEntity, moment, {
-    licensePlate: maskPlate(moment.licensePlate),
-  });
+  const masked = Object.assign(
+    Object.create(Object.getPrototypeOf(moment)) as MomentEntity,
+    moment,
+    {
+      licensePlate: maskPlate(moment.licensePlate),
+      aiAnalysis: sanitizeAiAnalysis(moment.aiAnalysis),
+      embeddingVector: null,
+    },
+  );
+
+  if (moment.photographer) {
+    masked.photographer = sanitizePhotographer(moment.photographer) as unknown as UsersEntity;
+  }
+
+  if (moment.photographerProfile?.user) {
+    masked.photographerProfile = Object.assign(
+      Object.create(Object.getPrototypeOf(moment.photographerProfile)),
+      moment.photographerProfile,
+      { user: sanitizePhotographer(moment.photographerProfile.user) },
+    );
+  }
+
+  return masked;
 }
 
 function scoreTextMatch(moment: MomentEntity, query?: string): number {
@@ -441,7 +523,7 @@ export class MomentsService {
 
       this._addRelations(query);
 
-      query.andWhere(SOFT_DELETE_FILTER);
+      query.andWhere(SOFT_DELETE_FILTER).andWhere(PUBLISHED_FILTER);
 
       if (queryEmbedding) {
         this._applySemanticOrdering(queryEmbedding, query);
@@ -565,7 +647,7 @@ export class MomentsService {
     try {
       const query = this._momentsRepository.createQueryBuilder('moments');
       this._addRelations(query);
-      query.where(SOFT_DELETE_FILTER);
+      query.where(SOFT_DELETE_FILTER).andWhere(PUBLISHED_FILTER);
       query.setParameters({ color, motorType });
 
       if (normalizedPlate) {
@@ -595,7 +677,7 @@ export class MomentsService {
       const { entities, raw } = await query.getRawAndEntities();
 
       return entities.map((entity, index) =>
-        Object.assign(entity, {
+        Object.assign(maskPublicMoment(entity), {
           matchScore: Number((raw[index] as { match_score?: number })?.match_score ?? 0),
         }),
       );
@@ -640,7 +722,7 @@ export class MomentsService {
     const query = this._momentsRepository.createQueryBuilder('moments');
 
     this._addDetailRelations(query);
-    query.where('moments.id = :id', { id }).andWhere(SOFT_DELETE_FILTER);
+    query.where('moments.id = :id', { id }).andWhere(SOFT_DELETE_FILTER).andWhere(PUBLISHED_FILTER);
 
     const moment = await query.getOne();
 
@@ -684,6 +766,7 @@ export class MomentsService {
     const query = this._momentsRepository
       .createQueryBuilder('moments')
       .where(SOFT_DELETE_FILTER)
+      .andWhere(PUBLISHED_FILTER)
       .andWhere('moments.id != :momentId', { momentId });
 
     this._addRelations(query);
@@ -742,6 +825,7 @@ export class MomentsService {
       const moments = await this._momentsRepository
         .createQueryBuilder('moments')
         .where(SOFT_DELETE_FILTER)
+        .andWhere(PUBLISHED_FILTER)
         .orderBy(COL_CAPTURED_AT, 'DESC')
         .take(limit)
         .cache(true)
@@ -764,6 +848,7 @@ export class MomentsService {
         .select('moments.city', 'label')
         .addSelect('COUNT(*)', 'count')
         .where(SOFT_DELETE_FILTER)
+        .andWhere(PUBLISHED_FILTER)
         .andWhere('moments.city IS NOT NULL')
         .groupBy('moments.city')
         .orderBy('count', 'DESC')
@@ -776,6 +861,7 @@ export class MomentsService {
         .select('moments.vehicle_type', 'label')
         .addSelect('COUNT(*)', 'count')
         .where(SOFT_DELETE_FILTER)
+        .andWhere(PUBLISHED_FILTER)
         .andWhere('moments.vehicle_type IS NOT NULL')
         .groupBy('moments.vehicle_type')
         .orderBy('count', 'DESC')

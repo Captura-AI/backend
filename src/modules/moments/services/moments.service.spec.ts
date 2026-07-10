@@ -9,6 +9,7 @@ import { PhotographerProfileEntity } from '../../photographers/entities/photogra
 import { UsersEntity } from '../../users/entities/users.entity';
 
 // Enums
+import { UserRoleEnum } from '../../users/enums/user-role.enum';
 import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
 
 // NestJS Libraries
@@ -416,6 +417,47 @@ describe('MomentsService', () => {
       expect(result.photographerSummary?.artistName).toBe('Ansel Adams');
       expect(result.photographerSummary?.totalMoments).toBe(42);
       expect(result.photographerSummary?.avatar).toBe('https://example.com/avatar.jpg');
+    });
+
+    it('masks plate + strips embedding/PII from aiAnalysis and photographer relations', async () => {
+      const moment = mockMoment();
+      const photographerUser = new UsersEntity();
+
+      photographerUser.id = 'photographer-uuid';
+      photographerUser.name = 'Rama Pratama';
+      photographerUser.avatar = 'https://example.com/avatar.jpg';
+      photographerUser.email = 'rama@captura.test';
+      photographerUser.googleId = 'google-123';
+      photographerUser.role = UserRoleEnum.PHOTOGRAPHER;
+      moment.photographer = photographerUser;
+      moment.licensePlate = 'D4872ABH';
+      moment.embeddingVector = [0.1, 0.2, 0.3];
+      moment.aiAnalysis = {
+        embedding: [0.1, 0.2, 0.3],
+        license_plate: 'D4872ABH',
+        vehicles: [{ license_plate: 'D4872ABH', vehicle_type: 'MOTORCYCLE' }],
+      };
+
+      const qb = buildMockQueryBuilder([moment], 1);
+      mockMomentsRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findOneById('test-uuid-1234');
+
+      expect(result.licensePlate).toBe('D4***BH');
+      expect(result.embeddingVector).toBeNull();
+      expect(result.aiAnalysis).not.toHaveProperty('embedding');
+      expect(result.aiAnalysis?.['license_plate']).toBe('D4***BH');
+      expect(
+        (result.aiAnalysis?.['vehicles'] as Array<{ license_plate: string }>)[0]?.license_plate,
+      ).toBe('D4***BH');
+      expect(result.photographer).toEqual({
+        avatar: 'https://example.com/avatar.jpg',
+        id: 'photographer-uuid',
+        name: 'Rama Pratama',
+        role: 'photographer',
+      });
+      expect(result.photographer).not.toHaveProperty('email');
+      expect(result.photographer).not.toHaveProperty('googleId');
     });
   });
 
