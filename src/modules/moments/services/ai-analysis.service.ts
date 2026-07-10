@@ -10,106 +10,22 @@ import { AppConfigurationsService } from '../../../configurations/app/app-config
 
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
-import { VehicleTypeEnum } from '../enums/vehicle-type.enum';
+
+// Helpers
+import { buildAutoFillFields } from '../helpers/ai-analysis.helper';
+
+// Interfaces
+import type {
+  IAiAnalysisResponse,
+  ITextEmbeddingResponse,
+  MomentScalarUpdate,
+} from '../interfaces/moments.interface';
 
 // TypeORM
 import { Repository } from 'typeorm';
 
-interface IAiAnalysisResponse {
-  detected_tags: string[];
-  embedding: number[] | null;
-  error: string | null;
-  exif: {
-    camera_make: string | null;
-    camera_model: string | null;
-    captured_at: number | null;
-    latitude: number | null;
-    longitude: number | null;
-  };
-  license_plate: string | null;
-  moment_id: string;
-  motor_type: string | null;
-  color: string | null;
-  plate_confidence: number | null;
-  processing_time_ms: number;
-  vehicle_confidence: number | null;
-  vehicle_type: string | null;
-}
-
-interface ITextEmbeddingResponse {
-  embedding: number[];
-  model: string;
-  query: string;
-  vector_dimension: number;
-}
-
-// Build a scalar-only payload — TypeORM update() cannot handle relation arrays
-type MomentScalarUpdate = {
-  aiAnalysis?: Record<string, unknown> | null;
-  cameraInfo?: string | null;
-  capturedAt?: number | null;
-  color?: string | null;
-  embeddingVector?: number[] | null;
-  latitude?: number | null;
-  licensePlate?: string | null;
-  longitude?: number | null;
-  motorType?: string | null;
-  vehicleType?: VehicleTypeEnum | null;
-};
-
 type MomentUpdateCriteria = Parameters<Repository<MomentEntity>['update']>[0];
 type MomentUpdatePayload = Parameters<Repository<MomentEntity>['update']>[1];
-
-const VEHICLE_TYPE_MAP: Record<string, VehicleTypeEnum> = {
-  BICYCLE: VehicleTypeEnum.BICYCLE,
-  BUS: VehicleTypeEnum.BUS,
-  CAR: VehicleTypeEnum.CAR,
-  MOTORCYCLE: VehicleTypeEnum.MOTORCYCLE,
-  TRUCK: VehicleTypeEnum.TRUCK,
-};
-
-function buildAutoFillFields(moment: MomentEntity, data: IAiAnalysisResponse): MomentScalarUpdate {
-  const fields: MomentScalarUpdate = {};
-
-  // Only fill a column the photographer left empty, and only with a real value
-  // (empty string / null are treated as "no value"). Kept as one helper so the
-  // per-field rules stay flat and cognitive complexity low.
-  const fill = <K extends keyof MomentScalarUpdate>(
-    key: K,
-    current: string | number | null | undefined,
-    next: MomentScalarUpdate[K] | null | undefined,
-  ): void => {
-    const isEmpty = current == null || current === '';
-    if (isEmpty && next != null && next !== '') {
-      // `key` is a compile-time `keyof MomentScalarUpdate` literal, not user input —
-      // safe despite the generic object-injection rule.
-      // eslint-disable-next-line security/detect-object-injection
-      fields[key] = next as MomentScalarUpdate[K];
-    }
-  };
-
-  let vehicleType: VehicleTypeEnum | null = null;
-  if (data.vehicle_type) {
-    vehicleType = VEHICLE_TYPE_MAP[data.vehicle_type] ?? VehicleTypeEnum.OTHER;
-  }
-
-  let cameraInfo: string | null = null;
-  if (data.exif?.camera_model) {
-    const make = data.exif.camera_make ? `${data.exif.camera_make} ` : '';
-    cameraInfo = `${make}${data.exif.camera_model}`.trim();
-  }
-
-  fill('vehicleType', moment.vehicleType, vehicleType);
-  fill('licensePlate', moment.licensePlate, data.license_plate);
-  fill('motorType', moment.motorType, data.motor_type);
-  fill('color', moment.color, data.color);
-  fill('latitude', moment.latitude, data.exif?.latitude);
-  fill('longitude', moment.longitude, data.exif?.longitude);
-  fill('capturedAt', moment.capturedAt, data.exif?.captured_at);
-  fill('cameraInfo', moment.cameraInfo, cameraInfo);
-
-  return fields;
-}
 
 @Injectable()
 export class AiAnalysisService {

@@ -1,3 +1,6 @@
+// Constants
+import { DEFAULT_PHOTOGRAPHER_NAME } from '../../../common/constants/common.constant';
+
 // DTOs
 import type { CreateSavedSearchDto } from '../dtos/create-saved-search.dto';
 
@@ -22,7 +25,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 
 const USD_CURRENCY = 'USD';
-const DEFAULT_PHOTOGRAPHER_NAME = 'Captura photographer';
 
 @Injectable()
 export class SavedService {

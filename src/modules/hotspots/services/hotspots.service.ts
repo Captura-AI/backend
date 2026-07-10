@@ -1,3 +1,7 @@
+// Constants
+import { DEFAULT_PHOTOGRAPHER_NAME } from '../../../common/constants/common.constant';
+import { MOMENTS_SOFT_DELETE_FILTER } from '../../moments/constants/moments.constant';
+
 // Entities
 import { HotspotEntity } from '../entities/hotspot.entity';
 import { MomentEntity } from '../../moments/entities/moments.entity';
@@ -12,6 +16,7 @@ import type {
   IPublicHotspotStats,
   IPublicHotspotSummary,
   IPublicRegionStats,
+  IRawStats,
 } from '../interfaces/public-hotspots.interface';
 
 // NestJS Libraries
@@ -33,9 +38,7 @@ const ACTIVE_PHOTOGRAPHERS_LIMIT = 8;
 const HOT_ACTIVE_THRESHOLD = 2;
 const HOT_LAST15_THRESHOLD = 5;
 
-const DEFAULT_PHOTOGRAPHER_NAME = 'Captura photographer';
 const MOMENTS_ALIAS = 'moments';
-const SOFT_DELETE_FILTER = 'moments.deleted_at IS NULL';
 
 /**
  * Region-level presentation metadata for the single region Captura currently
@@ -49,12 +52,6 @@ const REGION = {
   name: 'Jawa Barat',
   primaryCity: 'Bandung',
 } as const;
-
-interface IRawStats {
-  total: string | null;
-  last15: string | null;
-  active: string | null;
-}
 
 @Injectable()
 export class HotspotsService {
@@ -164,7 +161,7 @@ export class HotspotsService {
         `COUNT(DISTINCT moments.photographer_id) FILTER (WHERE moments.created_at >= :activeSince)`,
         'active',
       )
-      .where(SOFT_DELETE_FILTER)
+      .where(MOMENTS_SOFT_DELETE_FILTER)
       .andWhere(this._keywordMatchSql(), { keywords })
       .setParameters({
         activeSince: now - ACTIVE_WINDOW_SECONDS,
@@ -187,7 +184,7 @@ export class HotspotsService {
     return await this._momentRepository
       .createQueryBuilder(MOMENTS_ALIAS)
       .leftJoinAndSelect('moments.photographer', 'photographer')
-      .where(SOFT_DELETE_FILTER)
+      .where(MOMENTS_SOFT_DELETE_FILTER)
       .andWhere('moments.image_url IS NOT NULL')
       .andWhere(this._keywordMatchSql(), { keywords })
       // Order by entity property paths (not raw SQL): TypeORM resolves orderBy
@@ -221,7 +218,7 @@ export class HotspotsService {
       .createQueryBuilder(MOMENTS_ALIAS)
       .select('COUNT(*)', 'momentsToday')
       .addSelect('COUNT(DISTINCT moments.photographer_id)', 'activePhotographers')
-      .where(SOFT_DELETE_FILTER)
+      .where(MOMENTS_SOFT_DELETE_FILTER)
       .andWhere('moments.created_at >= :startOfToday', { startOfToday })
       .andWhere(this._keywordMatchSql(), { keywords })
       .getRawOne<{ momentsToday: string | null; activePhotographers: string | null }>();

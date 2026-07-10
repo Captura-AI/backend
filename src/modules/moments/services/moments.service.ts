@@ -1,5 +1,9 @@
 // Constants
 import { BAD_REQUEST_MSG } from '../../../common/constants/common.constant';
+import {
+  MOMENTS_PUBLISHED_FILTER,
+  MOMENTS_SOFT_DELETE_FILTER,
+} from '../constants/moments.constant';
 
 // DTOs
 import { PageMetaDto } from '../../../common/dtos/page-meta.dto';
@@ -10,15 +14,30 @@ import { TIME_OF_DAY_HOURS, TimeOfDayEnum } from '../dtos/time-filter.dto';
 // Entities
 import { MomentEntity } from '../entities/moments.entity';
 import { MomentLicenseEntity } from '../entities/moment-license.entity';
-import { UsersEntity } from '../../users/entities/users.entity';
 
 // Helpers
 import { QuerySortingHelper } from '../../../common/helpers/query-sorting.helper';
+import {
+  CANONICAL_PLATE_SQL,
+  CANONICAL_PLATE_TRIGRAM_THRESHOLD,
+  MAX_PLATE_LEVENSHTEIN_DISTANCE,
+  NORMALIZED_PLATE_SQL,
+  PLATE_FUZZY_CANONICAL_EXACT_SCORE,
+  PLATE_FUZZY_DISTANCE_SCORE,
+  PLATE_FUZZY_SIMILARITY_SCORE,
+  PLATE_PARTIAL_SCORE,
+  PLATE_TRIGRAM_THRESHOLD,
+  canonicalizePlate,
+  isFuzzyPlateEnabled,
+  normalizePlate,
+  vectorLiteral,
+} from '../helpers/plate-matching.helper';
+import { maskPublicMoment } from '../helpers/public-sanitization.helper';
+import { buildMatch } from '../helpers/search-scoring.helper';
 
 // Interfaces
 import type {
   IMomentFacets,
-  IMomentSearchMatch,
   IMomentSearchResult,
   IPhotographerSummary,
 } from '../interfaces/moments.interface';
@@ -33,320 +52,12 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 // Services
 import { AiAnalysisService } from './ai-analysis.service';
 
-const SOFT_DELETE_FILTER = 'moments.deleted_at IS NULL';
-// Public read paths (search/recent/detail/similar/facets) must never surface
-// a photographer's unpublished draft — only their own dashboard queries
-// (PhotographersService) may bypass this.
-const PUBLISHED_FILTER = 'moments.is_published = true';
 // Raw SQL column reference — safe inside andWhere/EXTRACT expressions.
 const COL_CAPTURED_AT = 'moments.captured_at';
 // Entity property path for orderBy. TypeORM resolves orderBy targets to column
 // metadata when paginating (skip/take), so it must be the camelCase property,
 // not the snake_case DB column — otherwise getMany throws on `databaseName`.
 const ORDER_CAPTURED_AT = 'moments.capturedAt';
-const NORMALIZED_PLATE_SQL = `regexp_replace(upper(moments.license_plate), '[^A-Z0-9]', '', 'g')`;
-const CANONICAL_PLATE_SQL = `translate(${NORMALIZED_PLATE_SQL}, 'OQIBSZG', '0018526')`;
-const CANONICAL_PLATE_TRIGRAM_THRESHOLD = 0.42;
-const MAX_PLATE_LEVENSHTEIN_DISTANCE = 2;
-const MIN_FUZZY_PLATE_LENGTH = 4;
-const PLATE_FUZZY_CANONICAL_EXACT_SCORE = 0.84;
-const PLATE_FUZZY_DISTANCE_SCORE = 0.8;
-const PLATE_FUZZY_SIMILARITY_SCORE = 0.72;
-const PLATE_PARTIAL_SCORE = 0.86;
-const PLATE_TRIGRAM_THRESHOLD = 0.35;
-
-type PlateMatchLabel = 'plate-exact' | 'plate-fuzzy' | 'plate-partial';
-
-const PLATE_FUZZY_LABEL: PlateMatchLabel = 'plate-fuzzy';
-
-interface IPlateMatchScore {
-  label: PlateMatchLabel;
-  score: number;
-}
-
-function normalizePlate(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-}
-
-function canonicalizePlate(value: string): string {
-  return normalizePlate(value)
-    .replace(/[OQ]/g, '0')
-    .replace(/I/g, '1')
-    .replace(/B/g, '8')
-    .replace(/S/g, '5')
-    .replace(/Z/g, '2')
-    .replace(/G/g, '6');
-}
-
-function getPlateEditDistance(source: string, target: string): number {
-  if (source === target) {
-    return 0;
-  }
-
-  if (!source) {
-    return target.length;
-  }
-
-  if (!target) {
-    return source.length;
-  }
-
-  const previousRow = Array.from({ length: target.length + 1 }, (_, index) => index);
-
-  for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
-    const currentRow = [sourceIndex + 1];
-
-    for (let targetIndex = 0; targetIndex < target.length; targetIndex += 1) {
-      const deletionCost = (previousRow.at(targetIndex + 1) ?? 0) + 1;
-      const insertionCost = (currentRow.at(targetIndex) ?? 0) + 1;
-      const substitutionCost =
-        (previousRow.at(targetIndex) ?? 0) +
-        (source.charAt(sourceIndex) === target.charAt(targetIndex) ? 0 : 1);
-
-      currentRow.push(Math.min(deletionCost, insertionCost, substitutionCost));
-    }
-
-    previousRow.splice(0, previousRow.length, ...currentRow);
-  }
-
-  return previousRow.at(target.length) ?? 0;
-}
-
-function getPlateTrigrams(value: string): Set<string> {
-  const paddedValue = `  ${value} `;
-  const trigrams = new Set<string>();
-
-  for (let index = 0; index <= paddedValue.length - 3; index += 1) {
-    trigrams.add(paddedValue.slice(index, index + 3));
-  }
-
-  return trigrams;
-}
-
-function getPlateTrigramSimilarity(source: string, target: string): number {
-  if (!source || !target) {
-    return 0;
-  }
-
-  const sourceTrigrams = getPlateTrigrams(source);
-  const targetTrigrams = getPlateTrigrams(target);
-  const intersectionSize = [...sourceTrigrams].filter((trigram) =>
-    targetTrigrams.has(trigram),
-  ).length;
-  const unionSize = new Set([...sourceTrigrams, ...targetTrigrams]).size;
-
-  return unionSize > 0 ? intersectionSize / unionSize : 0;
-}
-
-function isFuzzyPlateEnabled(normalizedPlate: string): boolean {
-  return normalizedPlate.length >= MIN_FUZZY_PLATE_LENGTH;
-}
-
-function vectorLiteral(vector: number[]): string {
-  return `[${vector.join(',')}]`;
-}
-
-function maskPlate(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.trim().toUpperCase();
-
-  if (normalized.length <= 4) {
-    return `${normalized.slice(0, 1)}***`;
-  }
-
-  return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
-}
-
-interface IAiAnalysisVehicle {
-  license_plate?: string | null;
-  [key: string]: unknown;
-}
-
-// The raw ai-service payload carries a raw plate read in two places: a
-// top-level `license_plate` (the unmatched-plate fallback — see analyzer.py)
-// and a per-vehicle `license_plate` inside `vehicles[]`. It also embeds a
-// 512-dim `embedding`. All three must be stripped/masked before reaching a
-// public response, mirroring the masking already applied to moments.licensePlate.
-function sanitizeAiAnalysis(
-  aiAnalysis: Record<string, unknown> | null,
-): Record<string, unknown> | null {
-  if (!aiAnalysis) {
-    return aiAnalysis;
-  }
-
-  const publicFields = { ...aiAnalysis };
-  delete publicFields['embedding'];
-
-  if (typeof publicFields['license_plate'] === 'string') {
-    publicFields['license_plate'] = maskPlate(publicFields['license_plate']);
-  }
-
-  const vehicles = publicFields['vehicles'];
-
-  if (!Array.isArray(vehicles)) {
-    return publicFields;
-  }
-
-  return {
-    ...publicFields,
-    vehicles: vehicles.map((vehicle) => {
-      const typedVehicle = vehicle as IAiAnalysisVehicle;
-
-      return { ...typedVehicle, license_plate: maskPlate(typedVehicle.license_plate ?? null) };
-    }),
-  };
-}
-
-interface IPublicPhotographer {
-  id: string;
-  name: string | null;
-  avatar: string | null;
-  role: string;
-}
-
-// Public moment responses must never carry a photographer's email, phone,
-// or OAuth identifiers — only the identity fields the UI actually renders.
-function sanitizePhotographer(user: UsersEntity | null | undefined): IPublicPhotographer | null {
-  if (!user) {
-    return null;
-  }
-
-  return { id: user.id, name: user.name, avatar: user.avatar, role: user.role };
-}
-
-function maskPublicMoment(moment: MomentEntity): MomentEntity {
-  const masked = Object.assign(
-    Object.create(Object.getPrototypeOf(moment)) as MomentEntity,
-    moment,
-    {
-      licensePlate: maskPlate(moment.licensePlate),
-      aiAnalysis: sanitizeAiAnalysis(moment.aiAnalysis),
-      embeddingVector: null,
-    },
-  );
-
-  if (moment.photographer) {
-    masked.photographer = sanitizePhotographer(moment.photographer) as unknown as UsersEntity;
-  }
-
-  if (moment.photographerProfile?.user) {
-    masked.photographerProfile = Object.assign(
-      Object.create(Object.getPrototypeOf(moment.photographerProfile)),
-      moment.photographerProfile,
-      { user: sanitizePhotographer(moment.photographerProfile.user) },
-    );
-  }
-
-  return masked;
-}
-
-function scoreTextMatch(moment: MomentEntity, query?: string): number {
-  if (!query) {
-    return 0;
-  }
-
-  const normalizedQuery = query.toLowerCase();
-  const searchableValues = [
-    moment.caption,
-    moment.description,
-    moment.city,
-    moment.district,
-    ...(moment.tags ?? []),
-  ]
-    .filter((value): value is string => typeof value === 'string')
-    .map((value) => value.toLowerCase());
-
-  return searchableValues.some((value) => value.includes(normalizedQuery)) ? 0.68 : 0.42;
-}
-
-function scorePlateMatch(moment: MomentEntity, licensePlate?: string): IPlateMatchScore | null {
-  if (!licensePlate || !moment.licensePlate) {
-    return null;
-  }
-
-  const queryPlate = normalizePlate(licensePlate);
-  const momentPlate = normalizePlate(moment.licensePlate);
-
-  if (!queryPlate || !momentPlate) {
-    return null;
-  }
-
-  if (momentPlate === queryPlate) {
-    return { label: 'plate-exact', score: 1 };
-  }
-
-  if (momentPlate.includes(queryPlate) || queryPlate.includes(momentPlate)) {
-    return { label: 'plate-partial', score: PLATE_PARTIAL_SCORE };
-  }
-
-  if (!isFuzzyPlateEnabled(queryPlate)) {
-    return null;
-  }
-
-  const canonicalMomentPlate = canonicalizePlate(momentPlate);
-  const canonicalQueryPlate = canonicalizePlate(queryPlate);
-
-  if (canonicalMomentPlate === canonicalQueryPlate) {
-    return { label: PLATE_FUZZY_LABEL, score: PLATE_FUZZY_CANONICAL_EXACT_SCORE };
-  }
-
-  const normalizedDistance = getPlateEditDistance(momentPlate, queryPlate);
-  const canonicalDistance = getPlateEditDistance(canonicalMomentPlate, canonicalQueryPlate);
-
-  if (
-    normalizedDistance <= MAX_PLATE_LEVENSHTEIN_DISTANCE ||
-    canonicalDistance <= MAX_PLATE_LEVENSHTEIN_DISTANCE
-  ) {
-    return { label: PLATE_FUZZY_LABEL, score: PLATE_FUZZY_DISTANCE_SCORE };
-  }
-
-  const normalizedSimilarity = getPlateTrigramSimilarity(momentPlate, queryPlate);
-  const canonicalSimilarity = getPlateTrigramSimilarity(canonicalMomentPlate, canonicalQueryPlate);
-
-  if (
-    normalizedSimilarity >= PLATE_TRIGRAM_THRESHOLD ||
-    canonicalSimilarity >= CANONICAL_PLATE_TRIGRAM_THRESHOLD
-  ) {
-    return { label: PLATE_FUZZY_LABEL, score: PLATE_FUZZY_SIMILARITY_SCORE };
-  }
-
-  return null;
-}
-
-function buildMatch(moment: MomentEntity, filters: SearchMomentDto): IMomentSearchMatch {
-  const plateMatch = scorePlateMatch(moment, filters.licensePlate);
-  const textScore = scoreTextMatch(moment, filters.query);
-  const semanticScore = filters.query && moment.embeddingVector ? 0.74 : 0;
-  const score = Math.max(plateMatch?.score ?? 0, semanticScore, textScore, 0.25);
-
-  if (plateMatch) {
-    return {
-      isPlateMatch: true,
-      isSemanticMatch: false,
-      label: plateMatch.label,
-      score,
-    };
-  }
-
-  if (semanticScore > 0) {
-    return {
-      isPlateMatch: false,
-      isSemanticMatch: true,
-      label: 'semantic',
-      score,
-    };
-  }
-
-  return {
-    isPlateMatch: false,
-    isSemanticMatch: false,
-    label: textScore > 0 ? 'text' : 'recent',
-    score,
-  };
-}
 
 @Injectable()
 export class MomentsService {
@@ -523,7 +234,7 @@ export class MomentsService {
 
       this._addRelations(query);
 
-      query.andWhere(SOFT_DELETE_FILTER).andWhere(PUBLISHED_FILTER);
+      query.andWhere(MOMENTS_SOFT_DELETE_FILTER).andWhere(MOMENTS_PUBLISHED_FILTER);
 
       if (queryEmbedding) {
         this._applySemanticOrdering(queryEmbedding, query);
@@ -647,7 +358,7 @@ export class MomentsService {
     try {
       const query = this._momentsRepository.createQueryBuilder('moments');
       this._addRelations(query);
-      query.where(SOFT_DELETE_FILTER).andWhere(PUBLISHED_FILTER);
+      query.where(MOMENTS_SOFT_DELETE_FILTER).andWhere(MOMENTS_PUBLISHED_FILTER);
       query.setParameters({ color, motorType });
 
       if (normalizedPlate) {
@@ -694,7 +405,7 @@ export class MomentsService {
     if (!plate) {
       return null;
     }
-    const normalized = plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const normalized = normalizePlate(plate);
     return normalized.length > 0 ? normalized : null;
   }
   public async searchWithMatches(
@@ -722,7 +433,10 @@ export class MomentsService {
     const query = this._momentsRepository.createQueryBuilder('moments');
 
     this._addDetailRelations(query);
-    query.where('moments.id = :id', { id }).andWhere(SOFT_DELETE_FILTER).andWhere(PUBLISHED_FILTER);
+    query
+      .where('moments.id = :id', { id })
+      .andWhere(MOMENTS_SOFT_DELETE_FILTER)
+      .andWhere(MOMENTS_PUBLISHED_FILTER);
 
     const moment = await query.getOne();
 
@@ -765,8 +479,8 @@ export class MomentsService {
 
     const query = this._momentsRepository
       .createQueryBuilder('moments')
-      .where(SOFT_DELETE_FILTER)
-      .andWhere(PUBLISHED_FILTER)
+      .where(MOMENTS_SOFT_DELETE_FILTER)
+      .andWhere(MOMENTS_PUBLISHED_FILTER)
       .andWhere('moments.id != :momentId', { momentId });
 
     this._addRelations(query);
@@ -824,8 +538,8 @@ export class MomentsService {
     try {
       const moments = await this._momentsRepository
         .createQueryBuilder('moments')
-        .where(SOFT_DELETE_FILTER)
-        .andWhere(PUBLISHED_FILTER)
+        .where(MOMENTS_SOFT_DELETE_FILTER)
+        .andWhere(MOMENTS_PUBLISHED_FILTER)
         .orderBy(COL_CAPTURED_AT, 'DESC')
         .take(limit)
         .cache(true)
@@ -847,8 +561,8 @@ export class MomentsService {
         .createQueryBuilder('moments')
         .select('moments.city', 'label')
         .addSelect('COUNT(*)', 'count')
-        .where(SOFT_DELETE_FILTER)
-        .andWhere(PUBLISHED_FILTER)
+        .where(MOMENTS_SOFT_DELETE_FILTER)
+        .andWhere(MOMENTS_PUBLISHED_FILTER)
         .andWhere('moments.city IS NOT NULL')
         .groupBy('moments.city')
         .orderBy('count', 'DESC')
@@ -860,8 +574,8 @@ export class MomentsService {
         .createQueryBuilder('moments')
         .select('moments.vehicle_type', 'label')
         .addSelect('COUNT(*)', 'count')
-        .where(SOFT_DELETE_FILTER)
-        .andWhere(PUBLISHED_FILTER)
+        .where(MOMENTS_SOFT_DELETE_FILTER)
+        .andWhere(MOMENTS_PUBLISHED_FILTER)
         .andWhere('moments.vehicle_type IS NOT NULL')
         .groupBy('moments.vehicle_type')
         .orderBy('count', 'DESC')
